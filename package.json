@@ -1,0 +1,73 @@
+{
+  "name": "pi-ask-question",
+  "version": "0.1.0",
+  "description": "Pi extension that adds an interactive ask_question tool for clarifying questions",
+  "author": "Mitch Fultz (https://github.com/fitchmultz)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-extension",
+    "extension",
+    "ask-question",
+    "clarifying-questions",
+    "custom-tool",
+    "tui",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fitchmultz/pi-ask-question.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fitchmultz/pi-ask-question/issues"
+  },
+  "homepage": "https://github.com/fitchmultz/pi-ask-question#readme",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm pack --dry-run",
+    "prepublishOnly": "npm run check"
+  },
+  "files": [
+    "extensions",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    },
+    "@earendil-works/pi-tui": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.79.9",
+    "@earendil-works/pi-tui": "^0.79.9",
+    "@types/node": "^25.9.1",
+    "typebox": "^1.1.38",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "basic-ftp": "6.0.1"
+  },
+  "packageManager": "npm@11.17.0"
+}
