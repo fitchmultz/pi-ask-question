@@ -1,6 +1,6 @@
 # pi ask-question extension
 
-A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_question`: a model-callable TUI tool for asking one or more clarifying questions before work continues.
+A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_question`: a model-callable TUI tool for asking one or more clarifying questions before work continues. It also adds `/grill-me`, a mode that makes the agent pressure-test underspecified requests before doing the work.
 
 ## What it does
 
@@ -9,6 +9,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 - Supports ordered choices, multi-select, and typed custom answers
 - Adds the custom-answer option automatically
 - Returns answers in tool result text and structured `details`
+- Adds `/grill-me` to toggle pressure-test mode
 
 ## Install
 
@@ -35,6 +36,24 @@ For local development:
 ```bash
 pi -e ./extensions/ask-question.ts
 ```
+
+## Grill-me mode
+
+Toggle the mode:
+
+```text
+/grill-me
+```
+
+Explicit commands:
+
+```text
+/grill-me on
+/grill-me off
+/grill-me status
+```
+
+When enabled, the footer shows subtle `grill-mode` text, and the agent is told to use `ask_question` for non-trivial, risky, underspecified, or strategic requests, then continue after you answer. In non-interactive runs, it asks in normal text instead.
 
 ## Tool shape
 
@@ -72,7 +91,9 @@ Ask several questions:
 
 - Options should be ordered from most recommended to least recommended.
 - Do not include a custom-answer option; the UI adds one.
-- `ask_question` requires an interactive pi UI.
+- `ask_question` requires pi TUI mode.
+- `/grill-me` state is saved in the current session branch and survives `/reload`.
+- The footer status is cleared when `/grill-me` is disabled.
 - `Esc` cancels and reports cancellation to the model.
 
 ## Development

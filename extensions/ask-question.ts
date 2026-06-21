@@ -23,7 +23,26 @@ type Answer = {
   wasCustom: boolean;
 };
 
+type GrillMeState = {
+  enabled: boolean;
+};
+
+type GrillMeAction = "toggle" | "enable" | "disable" | "status" | "invalid";
+
 const CUSTOM_OPTION = "Type a custom answer";
+const GRILL_ME_STATE_TYPE = "ask-question.grill-me";
+const GRILL_ME_STATUS_KEY = "ask-question.grill-me";
+
+function grillMePrompt(useTool: boolean): string {
+  return `IMPORTANT: /grill-me mode is active.
+
+Pressure-test the user's request before doing meaningful work:
+- For non-trivial, risky, underspecified, or strategic requests, ${useTool ? "call ask_question first" : "ask clarifying questions first in normal text"}.
+- Ask short, pointed questions about scope, tradeoffs, acceptance criteria, risks, and constraints.
+- Prefer a few high-value questions over a questionnaire.
+- Do not ask when the next step is obvious, low-risk, or already constrained; proceed normally.
+- After the user answers, continue the work directly.`;
+}
 
 const QuestionSchema = Type.Object(
   {
@@ -347,7 +366,7 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
         if (editing) {
           add();
           add(theme.fg("muted", "Your answer:"));
-          for (const line of editor.render(width - 2)) add(` ${line}`);
+          for (const line of editor.render(Math.max(1, width - 2))) add(` ${line}`);
         }
       }
 
@@ -365,6 +384,37 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
 
     return { render, handleInput, invalidate: () => { cachedLines = undefined; } };
   });
+}
+
+function parseGrillMeAction(args: string): GrillMeAction {
+  switch (args.trim().toLowerCase()) {
+    case "":
+      return "toggle";
+    case "on":
+      return "enable";
+    case "off":
+      return "disable";
+    case "status":
+      return "status";
+    default:
+      return "invalid";
+  }
+}
+
+function isGrillMeState(data: unknown): data is GrillMeState {
+  return data !== null && typeof data === "object" && "enabled" in data && typeof data.enabled === "boolean";
+}
+
+function restoreGrillMeState(entries: Iterable<unknown>): boolean {
+  let enabled = false;
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object") continue;
+    const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
+    if (record.type === "custom" && record.customType === GRILL_ME_STATE_TYPE && isGrillMeState(record.data)) {
+      enabled = record.data.enabled;
+    }
+  }
+  return enabled;
 }
 
 const askQuestionTool = defineTool({
@@ -385,7 +435,7 @@ const askQuestionTool = defineTool({
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
     const questions = normalize(params);
     if (!questions.length) throw new Error("ask_question needs either question or questions[].");
-    if (!ctx.hasUI) throw new Error("ask_question needs an interactive pi UI.");
+    if (ctx.mode !== "tui") throw new Error("ask_question needs pi TUI mode.");
 
     const result = await askWithKeyboard(questions, ctx.ui);
     const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
@@ -397,6 +447,57 @@ const askQuestionTool = defineTool({
   },
 });
 
+function registerGrillMe(pi: ExtensionAPI) {
+  let grillMeMode = false;
+
+  function persistGrillMeMode() {
+    pi.appendEntry<GrillMeState>(GRILL_ME_STATE_TYPE, { enabled: grillMeMode });
+  }
+
+  function updateGrillMeStatus(ctx: { ui: ExtensionContext["ui"] }) {
+    ctx.ui.setStatus(GRILL_ME_STATUS_KEY, grillMeMode ? ctx.ui.theme.fg("dim", "grill-mode") : undefined);
+  }
+
+  function restoreGrillMeMode(ctx: ExtensionContext) {
+    grillMeMode = restoreGrillMeState(ctx.sessionManager.getBranch());
+  }
+
+  pi.registerCommand("grill-me", {
+    description: "Toggle a mode that makes the agent pressure-test requests with ask_question",
+    handler: async (args, ctx) => {
+      const action = parseGrillMeAction(args);
+      if (action === "enable") grillMeMode = true;
+      else if (action === "disable") grillMeMode = false;
+      else if (action === "toggle") grillMeMode = !grillMeMode;
+      else if (action === "invalid") {
+        ctx.ui.notify("Usage: /grill-me [on|off|status]", "warning");
+        return;
+      }
+
+      if (action !== "status") persistGrillMeMode();
+      updateGrillMeStatus(ctx);
+      ctx.ui.notify(`Grill-me mode ${grillMeMode ? "enabled" : "disabled"}`, "info");
+    },
+  });
+
+  pi.on("session_start", async (_event, ctx) => {
+    restoreGrillMeMode(ctx);
+    updateGrillMeStatus(ctx);
+  });
+
+  pi.on("session_tree", async (_event, ctx) => {
+    restoreGrillMeMode(ctx);
+    updateGrillMeStatus(ctx);
+  });
+
+  pi.on("before_agent_start", async (event, ctx) => {
+    if (!grillMeMode) return undefined;
+    const useTool = ctx.mode === "tui" && pi.getActiveTools().includes("ask_question");
+    return { systemPrompt: `${event.systemPrompt}\n\n${grillMePrompt(useTool)}` };
+  });
+}
+
 export default function askQuestion(pi: ExtensionAPI) {
   pi.registerTool(askQuestionTool);
+  registerGrillMe(pi);
 }

@@ -1,7 +1,7 @@
 {
   "name": "pi-ask-question",
   "version": "0.1.0",
-  "description": "Pi extension that adds an interactive ask_question tool for clarifying questions",
+  "description": "Pi extension that adds an interactive ask_question tool and /grill-me pressure-test mode",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
   "type": "module",
@@ -15,6 +15,7 @@
     "extension",
     "ask-question",
     "clarifying-questions",
+    "grill-me",
     "custom-tool",
     "tui",
     "typescript"
@@ -28,8 +29,9 @@
   },
   "homepage": "https://github.com/fitchmultz/pi-ask-question#readme",
   "scripts": {
+    "test": "node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm pack --dry-run",
+    "check": "npm test && npm run typecheck && npm pack --dry-run",
     "prepublishOnly": "npm run check"
   },
   "files": [
