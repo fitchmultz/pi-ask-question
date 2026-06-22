@@ -53,7 +53,7 @@ Explicit commands:
 /grill-me status
 ```
 
-When enabled, the footer shows subtle `grill-mode` text, and the agent is told to use `ask_question` for non-trivial, risky, underspecified, or strategic requests, then continue after you answer. In non-interactive runs, it asks in normal text instead.
+When enabled, the footer shows subtle `grill-mode` text, and the agent is told to walk the decision tree, inspect available repo evidence before asking, ask one blocking question at a time, and include its recommended answer first. In non-interactive runs, it asks in normal text instead.
 
 ## Tool shape
 

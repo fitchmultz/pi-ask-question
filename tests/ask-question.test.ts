@@ -75,6 +75,10 @@ test("grill-me toggles, persists, and updates footer status", async () => {
   const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
   assert.match(result.systemPrompt, /base/);
   assert.match(result.systemPrompt, /call ask_question first/);
+  assert.match(result.systemPrompt, /Walk the decision tree/);
+  assert.match(result.systemPrompt, /reading local files, docs, tests, or command output/);
+  assert.match(result.systemPrompt, /Ask exactly one blocking question at a time/);
+  assert.match(result.systemPrompt, /recommended answer as the first option/);
 
   await command.handler("off", harness.ctx);
   assert.deepEqual(harness.entries.at(-1), { type: "custom", customType: "ask-question.grill-me", data: { enabled: false } });

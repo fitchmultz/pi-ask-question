@@ -37,9 +37,11 @@ function grillMePrompt(useTool: boolean): string {
   return `IMPORTANT: /grill-me mode is active.
 
 Pressure-test the user's request before doing meaningful work:
+- Walk the decision tree: resolve upstream choices before downstream details.
+- If a question can be answered by reading local files, docs, tests, or command output, inspect those sources instead of asking the user.
 - For non-trivial, risky, underspecified, or strategic requests, ${useTool ? "call ask_question first" : "ask clarifying questions first in normal text"}.
-- Ask short, pointed questions about scope, tradeoffs, acceptance criteria, risks, and constraints.
-- Prefer a few high-value questions over a questionnaire.
+- Ask exactly one blocking question at a time, then wait for the answer before asking the next one.
+- For every question, include your recommended answer as the first option and make it specific.
 - Do not ask when the next step is obvious, low-risk, or already constrained; proceed normally.
 - After the user answers, continue the work directly.`;
 }
