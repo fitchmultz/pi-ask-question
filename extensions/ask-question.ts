@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, matchesKey } from "@earendil-works/pi-tui";
+import { Editor, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -23,6 +23,12 @@ type Answer = {
   wasCustom: boolean;
 };
 
+type AskQuestionDetails = {
+  questions: NormalizedQuestion[];
+  answers: Answer[];
+  cancelled: boolean;
+};
+
 type GrillMeState = {
   enabled: boolean;
 };
@@ -32,6 +38,7 @@ type GrillMeAction = "toggle" | "enable" | "disable" | "status" | "invalid";
 const CUSTOM_OPTION = "Type a custom answer";
 const GRILL_ME_STATE_TYPE = "ask-question.grill-me";
 const GRILL_ME_STATUS_KEY = "ask-question.grill-me";
+const GRILL_ME_ARGUMENTS = ["on", "off", "status"];
 
 function grillMePrompt(useTool: boolean): string {
   return `IMPORTANT: /grill-me mode is active.
@@ -48,7 +55,7 @@ Pressure-test the user's request before doing meaningful work:
 
 const QuestionSchema = Type.Object(
   {
-    id: Type.Optional(Type.String({ description: "Stable answer id." })),
+    id: Type.Optional(Type.String({ description: "Stable answer id. Defaults to question_<n>; duplicates are auto-suffixed." })),
     question: Type.String({ minLength: 1, description: "Question to ask the user." }),
     options: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { description: "Choices, ordered from most recommended to least recommended." })),
     multiSelect: Type.Optional(Type.Boolean({ description: "Allow selecting more than one option for this question. Defaults to false." })),
@@ -61,7 +68,7 @@ const AskQuestionParams = Type.Object(
     question: Type.Optional(Type.String({ minLength: 1, description: "Single question to ask." })),
     options: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { description: "Choices, ordered from most recommended to least recommended." })),
     multiSelect: Type.Optional(Type.Boolean({ description: "Allow selecting more than one option for the single question. Defaults to false." })),
-    questions: Type.Optional(Type.Array(QuestionSchema, { description: "Ask several questions in order." })),
+    questions: Type.Optional(Type.Array(QuestionSchema, { description: "Ask several questions in order. When provided, takes precedence over the single-question fields." })),
   },
   { additionalProperties: false },
 );
@@ -71,23 +78,39 @@ function clean(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
-function normalize(params: { question?: string; options?: string[]; multiSelect?: boolean; questions?: Question[] }): NormalizedQuestion[] {
+export function normalize(params: { question?: string; options?: string[]; multiSelect?: boolean; questions?: Question[] }): NormalizedQuestion[] {
   const raw = params.questions?.length
     ? params.questions
     : [{ id: "question_1", question: params.question ?? "", options: params.options, multiSelect: params.multiSelect }];
 
-  return raw.flatMap((question, index) => {
+  const assigned = new Set<string>();
+  const result: NormalizedQuestion[] = [];
+
+  for (let index = 0; index < raw.length; index += 1) {
+    const question = raw[index];
     const text = clean(question.question);
-    if (!text) return [];
-    return [{
-      id: clean(question.id) ?? `question_${index + 1}`,
+    if (!text) continue;
+
+    const baseId = clean(question.id) ?? `question_${index + 1}`;
+    let id = baseId;
+    let suffix = 2;
+    while (assigned.has(id)) {
+      id = `${baseId}_${suffix}`;
+      suffix += 1;
+    }
+    assigned.add(id);
+
+    result.push({
+      id,
       question: text,
       options: (question.options ?? [])
         .map(clean)
         .filter((option): option is string => Boolean(option) && option !== CUSTOM_OPTION),
       multiSelect: question.multiSelect === true,
-    }];
-  });
+    });
+  }
+
+  return result;
 }
 
 function orderedAnswers(questions: NormalizedQuestion[], answers: Map<string, Answer>): Answer[] {
@@ -101,31 +124,6 @@ function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>
     "User answered:",
     ...questions.map((question) => `- ${question.id}: ${answers.get(question.id)?.answer ?? "unanswered"}`),
   ].join("\n");
-}
-
-function wrapText(text: string, width: number): string[] {
-  const safeWidth = Math.max(1, width);
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let line = "";
-
-  for (const word of words) {
-    if (word.length > safeWidth) {
-      if (line) lines.push(line);
-      for (let i = 0; i < word.length; i += safeWidth) lines.push(word.slice(i, i + safeWidth));
-      line = "";
-    } else if (!line) {
-      line = word;
-    } else if (line.length + 1 + word.length <= safeWidth) {
-      line += ` ${word}`;
-    } else {
-      lines.push(line);
-      line = word;
-    }
-  }
-
-  if (line) lines.push(line);
-  return lines.length ? lines : [""];
 }
 
 async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionContext["ui"]): Promise<{ answers: Answer[]; cancelled: boolean }> {
@@ -308,11 +306,10 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
         const restPrefix = options.restPrefix ?? "";
         const style = options.style ?? ((value: string) => value);
         const prefixStyle = options.prefixStyle ?? ((value: string) => value);
-        const firstWidth = Math.max(1, width - firstPrefix.length);
-        const restWidth = Math.max(1, width - restPrefix.length);
-        const [first = "", ...rest] = wrapText(text, firstWidth);
-        add(`${prefixStyle(firstPrefix)}${style(first)}`);
-        for (const line of rest.flatMap((value) => wrapText(value, restWidth))) add(`${prefixStyle(restPrefix)}${style(line)}`);
+        const contentWidth = Math.max(1, width - visibleWidth(firstPrefix));
+        const wrapped = wrapTextWithAnsi(style(text), contentWidth);
+        add(`${prefixStyle(firstPrefix)}${wrapped[0] ?? ""}`);
+        for (let index = 1; index < wrapped.length; index += 1) add(`${prefixStyle(restPrefix)}${wrapped[index]}`);
       };
       const border = theme.fg("accent", "─".repeat(width));
 
@@ -337,7 +334,7 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
         for (const question of questions) {
           addWrapped(answers.get(question.id)?.answer ?? "unanswered", {
             firstPrefix: `${question.id}: `,
-            restPrefix: " ".repeat(question.id.length + 2),
+            restPrefix: " ".repeat(visibleWidth(`${question.id}: `)),
             style: answers.has(question.id) ? undefined : (text) => theme.fg("warning", text),
           });
         }
@@ -403,6 +400,11 @@ function parseGrillMeAction(args: string): GrillMeAction {
   }
 }
 
+function completeGrillMeArgs(prefix: string): AutocompleteItem[] | null {
+  const matches = GRILL_ME_ARGUMENTS.filter((arg) => arg.startsWith(prefix.trim().toLowerCase()));
+  return matches.length ? matches.map((value) => ({ value, label: value })) : null;
+}
+
 function isGrillMeState(data: unknown): data is GrillMeState {
   return data !== null && typeof data === "object" && "enabled" in data && typeof data.enabled === "boolean";
 }
@@ -425,14 +427,12 @@ const askQuestionTool = defineTool({
   description: "Ask the user one or more clarifying questions through pi's UI. Works for any model.",
   promptSnippet: "Ask the user clarifying questions through pi's UI",
   promptGuidelines: [
-    "When using ask_question, list options from most recommended to least recommended. The first option must be the recommended choice.",
-    "Do not label an option as recommended; the option order already communicates recommendation.",
+    "List options from most recommended to least; the first option is the recommended choice, and do not label any option as recommended.",
     "Set multiSelect:true only when the user may need to choose more than one option for a question.",
-    "ask_question always adds a typed custom-answer option last; do not include your own custom-answer option.",
-    "Use as many or as few ask_question options as are useful for the decision.",
-    "Use ask_question when user input would materially change scope, requirements, implementation choices, or acceptance criteria.",
+    "A typed custom-answer option is added automatically; do not include your own.",
   ],
   parameters: AskQuestionParams,
+  executionMode: "sequential",
 
   async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
     const questions = normalize(params);
@@ -444,8 +444,32 @@ const askQuestionTool = defineTool({
 
     return {
       content: [{ type: "text", text: summarize(questions, answers, result.cancelled) }],
-      details: { questions, answers: result.answers, cancelled: result.cancelled },
+      details: { questions, answers: result.answers, cancelled: result.cancelled } satisfies AskQuestionDetails,
     };
+  },
+
+  renderCall(args, theme, _context) {
+    const questions = normalize(args);
+    const count = questions.length;
+    const labels = questions.map((question) => question.id).join(", ");
+    let text = theme.fg("toolTitle", theme.bold("ask_question "));
+    text += theme.fg("muted", `${count} question${count !== 1 ? "s" : ""}`);
+    if (labels) text += theme.fg("dim", ` (${labels})`);
+    return new Text(text, 0, 0);
+  },
+
+  renderResult(result, _options, theme, _context) {
+    const details = result.details as AskQuestionDetails | undefined;
+    if (!details) {
+      const content = result.content[0];
+      return new Text(content?.type === "text" ? content.text : "", 0, 0);
+    }
+    if (details.cancelled) return new Text(theme.fg("warning", "Cancelled"), 0, 0);
+    const lines = details.questions.map((question) => {
+      const answer = details.answers.find((entry) => entry.id === question.id);
+      return `${theme.fg("success", "✓ ")}${theme.fg("accent", question.id)}: ${answer?.answer ?? "unanswered"}`;
+    });
+    return new Text(lines.join("\n"), 0, 0);
   },
 });
 
@@ -456,7 +480,8 @@ function registerGrillMe(pi: ExtensionAPI) {
     pi.appendEntry<GrillMeState>(GRILL_ME_STATE_TYPE, { enabled: grillMeMode });
   }
 
-  function updateGrillMeStatus(ctx: { ui: ExtensionContext["ui"] }) {
+  function updateGrillMeStatus(ctx: Pick<ExtensionContext, "mode" | "ui">) {
+    if (ctx.mode !== "tui") return;
     ctx.ui.setStatus(GRILL_ME_STATUS_KEY, grillMeMode ? ctx.ui.theme.fg("dim", "grill-mode") : undefined);
   }
 
@@ -466,6 +491,7 @@ function registerGrillMe(pi: ExtensionAPI) {
 
   pi.registerCommand("grill-me", {
     description: "Toggle a mode that makes the agent pressure-test requests with ask_question",
+    getArgumentCompletions: completeGrillMeArgs,
     handler: async (args, ctx) => {
       const action = parseGrillMeAction(args);
       if (action === "enable") grillMeMode = true;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import askQuestion from "../extensions/ask-question.ts";
+import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
 function fakeHarness() {
   const tools = new Map<string, any>();
@@ -11,10 +11,16 @@ function fakeHarness() {
   const statuses: Array<{ key: string; text: string | undefined }> = [];
   const notifications: Array<{ message: string; type?: string }> = [];
 
+  const theme = {
+    fg: (_color: string, text: string) => text,
+    bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
+  };
+
   const ctx = {
     mode: "tui",
     ui: {
-      theme: { fg: (_color: string, text: string) => text },
+      theme,
       setStatus: (key: string, text: string | undefined) => statuses.push({ key, text }),
       notify: (message: string, type?: string) => notifications.push({ message, type }),
     },
@@ -37,6 +43,7 @@ function fakeHarness() {
     handlers,
     entries,
     ctx,
+    theme,
     statuses,
     notifications,
     setMode: (mode: string) => { ctx.mode = mode; },
@@ -53,6 +60,11 @@ test("registers ask_question tool and grill-me command", () => {
   assert.ok(harness.handlers.has("before_agent_start"));
 });
 
+test("ask_question is registered sequential so concurrent calls cannot fight for keyboard focus", () => {
+  const harness = fakeHarness();
+  assert.equal(harness.tools.get("ask_question").executionMode, "sequential");
+});
+
 test("ask_question refuses non-TUI mode before opening custom UI", async () => {
   const harness = fakeHarness();
   const tool = harness.tools.get("ask_question");
@@ -62,6 +74,64 @@ test("ask_question refuses non-TUI mode before opening custom UI", async () => {
     tool.execute("call_1", { question: "Continue?", options: ["Yes"] }, undefined, undefined, harness.ctx),
     /needs pi TUI mode/,
   );
+});
+
+test("ask_question renderCall shows count and ids, renderResult shows answers or cancelled", () => {
+  const harness = fakeHarness();
+  const tool = harness.tools.get("ask_question");
+
+  const call = tool.renderCall(
+    { questions: [{ id: "scope", question: "Scope?", options: ["a"] }, { id: "checks", question: "Checks?", options: ["x", "y"], multiSelect: true }] },
+    harness.theme,
+    harness.ctx,
+  );
+  const callOut = call.render(80).join("\n");
+  assert.match(callOut, /ask_question/);
+  assert.match(callOut, /2 questions/);
+  assert.match(callOut, /scope, checks/);
+
+  const cancelled = tool.renderResult(
+    { content: [{ type: "text", text: "User cancelled the question." }], details: { questions: [], answers: [], cancelled: true } },
+    { expanded: false, isPartial: false },
+    harness.theme,
+    harness.ctx,
+  );
+  assert.match(cancelled.render(80).join("\n"), /Cancelled/);
+
+  const answered = tool.renderResult(
+    {
+      content: [{ type: "text", text: "x" }],
+      details: {
+        questions: [{ id: "q", question: "Q?", options: [], multiSelect: false }],
+        answers: [{ id: "q", question: "Q?", answer: "Yes", wasCustom: false }],
+        cancelled: false,
+      },
+    },
+    { expanded: false, isPartial: false },
+    harness.theme,
+    harness.ctx,
+  );
+  const out = answered.render(80).join("\n");
+  assert.match(out, /q/);
+  assert.match(out, /Yes/);
+});
+
+test("normalize auto-suffixes duplicate question ids", () => {
+  const result = normalize({ questions: [{ id: "x", question: "a?" }, { id: "x", question: "b?" }, { id: "x", question: "c?" }] });
+  assert.deepEqual(result.map((q) => q.id), ["x", "x_2", "x_3"]);
+});
+
+test("normalize avoids collisions with user-supplied suffixed ids", () => {
+  const result = normalize({ questions: [{ id: "x", question: "a?" }, { id: "x_2", question: "b?" }, { id: "x", question: "c?" }] });
+  assert.deepEqual(result.map((q) => q.id), ["x", "x_2", "x_3"]);
+});
+
+test("grill-me completes on off status", () => {
+  const harness = fakeHarness();
+  const command = harness.commands.get("grill-me");
+  assert.deepEqual(command.getArgumentCompletions("").map((i: any) => i.value).sort(), ["off", "on", "status"]);
+  assert.deepEqual(command.getArgumentCompletions("o").map((i: any) => i.value).sort(), ["off", "on"]);
+  assert.equal(command.getArgumentCompletions("zzz"), null);
 });
 
 test("grill-me toggles, persists, and updates footer status", async () => {
@@ -98,6 +168,16 @@ test("grill-me restores last valid branch state after reload", async () => {
 
   const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
   assert.match(result.systemPrompt, /call ask_question first/);
+});
+
+test("grill-me skips footer status outside TUI", async () => {
+  const harness = fakeHarness();
+  await harness.commands.get("grill-me").handler("on", harness.ctx);
+  harness.setMode("print");
+
+  const statusesBefore = harness.statuses.length;
+  await harness.handlers.get("session_start")({}, harness.ctx);
+  assert.equal(harness.statuses.length, statusesBefore);
 });
 
 test("grill-me uses text questions outside TUI or when ask_question is inactive", async () => {
