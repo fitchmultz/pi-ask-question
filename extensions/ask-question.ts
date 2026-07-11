@@ -36,6 +36,7 @@ type GrillMeState = {
 type GrillMeAction = "toggle" | "enable" | "disable" | "status" | "invalid";
 
 const CUSTOM_OPTION = "Type a custom answer";
+const DONE_OPTION = "Done selecting";
 const GRILL_ME_STATE_TYPE = "ask-question.grill-me";
 const GRILL_ME_STATUS_KEY = "ask-question.grill-me";
 const GRILL_ME_ARGUMENTS = ["on", "off", "status"];
@@ -78,6 +79,12 @@ function clean(value: string | undefined): string | undefined {
   return trimmed || undefined;
 }
 
+function uniqueOptionLabel(label: string, options: string[]): string {
+  let result = label;
+  for (let suffix = 2; options.includes(result); suffix += 1) result = `${label} (${suffix})`;
+  return result;
+}
+
 export function normalize(params: { question?: string; options?: string[]; multiSelect?: boolean; questions?: Question[] }): NormalizedQuestion[] {
   const raw = params.questions?.length
     ? params.questions
@@ -105,7 +112,7 @@ export function normalize(params: { question?: string; options?: string[]; multi
       question: text,
       options: (question.options ?? [])
         .map(clean)
-        .filter((option): option is string => Boolean(option) && option !== CUSTOM_OPTION),
+        .filter((option): option is string => Boolean(option)),
       multiSelect: question.multiSelect === true,
     });
   }
@@ -126,7 +133,12 @@ function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>
   ].join("\n");
 }
 
-async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionContext["ui"]): Promise<{ answers: Answer[]; cancelled: boolean }> {
+async function askWithKeyboard(
+  questions: NormalizedQuestion[],
+  ui: ExtensionContext["ui"],
+  signal?: AbortSignal,
+): Promise<{ answers: Answer[]; cancelled: boolean }> {
+  if (signal?.aborted) return { answers: [], cancelled: true };
   return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, _keys, done) => {
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
@@ -150,13 +162,22 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
     const submitTab = questions.length;
     const showTabs = questions.length > 1 || questions.some((question) => question.multiSelect);
     const current = () => questions[tab];
-    const choices = () => [...(current()?.options ?? []), CUSTOM_OPTION];
+    const customOption = () => uniqueOptionLabel(CUSTOM_OPTION, current()?.options ?? []);
+    const choices = () => [...(current()?.options ?? []), customOption()];
     const allAnswered = () => questions.every((question) => answers.has(question.id));
     const refresh = () => {
       cachedLines = undefined;
       tui.requestRender();
     };
-    const finish = (cancelled: boolean) => done({ answers: orderedAnswers(questions, answers), cancelled });
+    let finished = false;
+    const finish = (cancelled: boolean) => {
+      if (finished) return;
+      finished = true;
+      signal?.removeEventListener("abort", abort);
+      done({ answers: orderedAnswers(questions, answers), cancelled });
+    };
+    const abort = () => finish(true);
+    signal?.addEventListener("abort", abort, { once: true });
 
     function moveTab(next: number) {
       tab = (next + questions.length + 1) % (questions.length + 1);
@@ -278,13 +299,13 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
       }
       if (question.multiSelect && matchesKey(data, Key.space)) {
         const picked = options[option];
-        if (picked === CUSTOM_OPTION) startCustomEdit(question);
+        if (picked === customOption()) startCustomEdit(question);
         else if (picked) toggleMultiChoice(question, picked);
         return;
       }
       if (matchesKey(data, Key.enter)) {
         const picked = options[option];
-        if (picked === CUSTOM_OPTION) {
+        if (picked === customOption()) {
           startCustomEdit(question);
         } else if (picked && question.multiSelect) {
           moveForwardIfAnswered(question);
@@ -353,7 +374,7 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
         options.forEach((choice, index) => {
           const highlighted = index === option;
           const checked = selected?.has(choice) ?? false;
-          const marker = question.multiSelect ? (choice === CUSTOM_OPTION ? "✎" : checked ? "☑" : "☐") : `${index + 1}.`;
+          const marker = question.multiSelect ? (choice === customOption() ? "✎" : checked ? "☑" : "☐") : `${index + 1}.`;
           const prefix = `${highlighted ? ">" : " "} ${marker} `;
           addWrapped(choice, {
             firstPrefix: prefix,
@@ -381,8 +402,64 @@ async function askWithKeyboard(questions: NormalizedQuestion[], ui: ExtensionCon
       return lines;
     }
 
-    return { render, handleInput, invalidate: () => { cachedLines = undefined; } };
+    return {
+      render,
+      handleInput,
+      invalidate: () => { cachedLines = undefined; },
+      dispose: () => signal?.removeEventListener("abort", abort),
+    };
   });
+}
+
+async function askWithDialogs(
+  questions: NormalizedQuestion[],
+  ui: ExtensionContext["ui"],
+  signal?: AbortSignal,
+): Promise<{ answers: Answer[]; cancelled: boolean }> {
+  const answers: Answer[] = [];
+
+  for (const question of questions) {
+    if (signal?.aborted) return { answers, cancelled: true };
+    const selected: string[] = [];
+    const customOption = uniqueOptionLabel(CUSTOM_OPTION, question.options);
+    const doneOption = uniqueOptionLabel(DONE_OPTION, question.options);
+
+    while (true) {
+      const choices = [...question.options.filter((option) => !selected.includes(option)), customOption];
+      if (question.multiSelect && selected.length) choices.push(doneOption);
+      const choice = await ui.select(question.question, choices, { signal });
+      if (choice === undefined) return { answers, cancelled: true };
+      if (choice === doneOption) break;
+
+      let answer = choice;
+      let wasCustom = false;
+      if (choice === customOption) {
+        const input = await ui.input(question.question, "Type your answer", { signal });
+        if (input === undefined) return { answers, cancelled: true };
+        const custom = clean(input);
+        if (!custom) continue;
+        answer = custom;
+        wasCustom = true;
+      }
+
+      if (!question.multiSelect) {
+        answers.push({ id: question.id, question: question.question, answer, wasCustom });
+        break;
+      }
+      if (!selected.includes(answer)) selected.push(answer);
+    }
+
+    if (question.multiSelect) {
+      answers.push({
+        id: question.id,
+        question: question.question,
+        answer: selected.join(", "),
+        wasCustom: selected.some((answer) => !question.options.includes(answer)),
+      });
+    }
+  }
+
+  return { answers, cancelled: false };
 }
 
 function parseGrillMeAction(args: string): GrillMeAction {
@@ -427,19 +504,21 @@ const askQuestionTool = defineTool({
   description: "Ask the user one or more clarifying questions through pi's UI. Works for any model.",
   promptSnippet: "Ask the user clarifying questions through pi's UI",
   promptGuidelines: [
-    "List options from most recommended to least; the first option is the recommended choice, and do not label any option as recommended.",
-    "Set multiSelect:true only when the user may need to choose more than one option for a question.",
-    "A typed custom-answer option is added automatically; do not include your own.",
+    "For ask_question, list options from most recommended to least; the first option is the recommended choice, and do not label it as recommended.",
+    "For ask_question, set multiSelect:true only when the user may need to choose more than one option.",
+    "For ask_question, a typed custom-answer option is added automatically; do not include your own.",
   ],
   parameters: AskQuestionParams,
   executionMode: "sequential",
 
-  async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+  async execute(_toolCallId, params, signal, _onUpdate, ctx) {
     const questions = normalize(params);
     if (!questions.length) throw new Error("ask_question needs either question or questions[].");
-    if (ctx.mode !== "tui") throw new Error("ask_question needs pi TUI mode.");
+    if (!ctx.hasUI) throw new Error("ask_question needs Pi TUI or RPC UI support.");
 
-    const result = await askWithKeyboard(questions, ctx.ui);
+    const result = ctx.mode === "tui"
+      ? await askWithKeyboard(questions, ctx.ui, signal)
+      : await askWithDialogs(questions, ctx.ui, signal);
     const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
 
     return {
@@ -520,7 +599,7 @@ function registerGrillMe(pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (event, ctx) => {
     if (!grillMeMode) return undefined;
-    const useTool = ctx.mode === "tui" && pi.getActiveTools().includes("ask_question");
+    const useTool = ctx.hasUI && pi.getActiveTools().includes("ask_question");
     return { systemPrompt: `${event.systemPrompt}\n\n${grillMePrompt(useTool)}` };
   });
 }

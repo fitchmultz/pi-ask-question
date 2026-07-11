@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { getEventListeners } from "node:events";
 import test from "node:test";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
@@ -10,6 +11,11 @@ function fakeHarness() {
   let activeTools = ["ask_question"];
   const statuses: Array<{ key: string; text: string | undefined }> = [];
   const notifications: Array<{ message: string; type?: string }> = [];
+  const selections: Array<string | undefined> = [];
+  const inputs: Array<string | undefined> = [];
+  const dialogCalls: Array<{ method: string; title: string; options?: string[]; signal?: AbortSignal }> = [];
+  let customComponent: any;
+  let customDoneCalls = 0;
 
   const theme = {
     fg: (_color: string, text: string) => text,
@@ -19,10 +25,25 @@ function fakeHarness() {
 
   const ctx = {
     mode: "tui",
+    hasUI: true,
     ui: {
       theme,
       setStatus: (key: string, text: string | undefined) => statuses.push({ key, text }),
       notify: (message: string, type?: string) => notifications.push({ message, type }),
+      select: async (title: string, options: string[], opts?: { signal?: AbortSignal }) => {
+        dialogCalls.push({ method: "select", title, options, signal: opts?.signal });
+        return selections.shift();
+      },
+      input: async (title: string, _placeholder?: string, opts?: { signal?: AbortSignal }) => {
+        dialogCalls.push({ method: "input", title, signal: opts?.signal });
+        return inputs.shift();
+      },
+      custom: (factory: any) => new Promise((resolve) => {
+        customComponent = factory({ requestRender() {} }, theme, {}, (value: unknown) => {
+          customDoneCalls += 1;
+          resolve(value);
+        });
+      }),
     },
     sessionManager: { getBranch: () => entries },
   };
@@ -46,7 +67,15 @@ function fakeHarness() {
     theme,
     statuses,
     notifications,
-    setMode: (mode: string) => { ctx.mode = mode; },
+    selections,
+    inputs,
+    dialogCalls,
+    getCustomComponent: () => customComponent,
+    getCustomDoneCalls: () => customDoneCalls,
+    setMode: (mode: string) => {
+      ctx.mode = mode;
+      ctx.hasUI = mode === "tui" || mode === "rpc";
+    },
     setActiveTools: (tools: string[]) => { activeTools = tools; },
   };
 }
@@ -65,15 +94,106 @@ test("ask_question is registered sequential so concurrent calls cannot fight for
   assert.equal(harness.tools.get("ask_question").executionMode, "sequential");
 });
 
-test("ask_question refuses non-TUI mode before opening custom UI", async () => {
+test("ask_question refuses modes without UI", async () => {
   const harness = fakeHarness();
   const tool = harness.tools.get("ask_question");
   harness.setMode("print");
 
   await assert.rejects(
     tool.execute("call_1", { question: "Continue?", options: ["Yes"] }, undefined, undefined, harness.ctx),
-    /needs pi TUI mode/,
+    /needs Pi TUI or RPC UI support/,
   );
+});
+
+test("ask_question uses sequential RPC dialogs and supports custom and multi-select answers", async () => {
+  const harness = fakeHarness();
+  const tool = harness.tools.get("ask_question");
+  harness.setMode("rpc");
+  harness.selections.push("Type a custom answer", "A", "B", "Done selecting");
+  harness.inputs.push("custom value");
+
+  const result = await tool.execute(
+    "call_1",
+    { questions: [
+      { id: "one", question: "First?" },
+      { id: "many", question: "Second?", options: ["A", "B"], multiSelect: true },
+    ] },
+    undefined,
+    undefined,
+    harness.ctx,
+  );
+
+  assert.deepEqual(harness.dialogCalls.map((call) => `${call.method}:${call.title}`), [
+    "select:First?", "input:First?", "select:Second?", "select:Second?", "select:Second?",
+  ]);
+  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["custom value", "A, B"]);
+  assert.equal(result.details.cancelled, false);
+});
+
+test("ask_question retries RPC option selection after blank custom input", async () => {
+  const harness = fakeHarness();
+  const tool = harness.tools.get("ask_question");
+  harness.setMode("rpc");
+  harness.selections.push("Type a custom answer", "A");
+  harness.inputs.push("   ");
+
+  const result = await tool.execute(
+    "call_1", { question: "Continue?", options: ["A"] }, undefined, undefined, harness.ctx,
+  );
+
+  assert.deepEqual(harness.dialogCalls.map((call) => call.method), ["select", "input", "select"]);
+  assert.equal(result.details.answers[0]?.answer, "A");
+  assert.equal(result.details.cancelled, false);
+});
+
+test("ask_question reports RPC cancellation and forwards the abort signal", async () => {
+  const harness = fakeHarness();
+  const tool = harness.tools.get("ask_question");
+  harness.setMode("rpc");
+  harness.selections.push(undefined);
+  const controller = new AbortController();
+
+  const result = await tool.execute("call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx);
+
+  assert.equal(harness.dialogCalls[0]?.signal, controller.signal);
+  assert.equal(result.details.cancelled, true);
+  assert.match(result.content[0].text, /cancelled/);
+});
+
+test("ask_question returns TUI cancellation when already aborted", async () => {
+  const harness = fakeHarness();
+  const controller = new AbortController();
+  controller.abort();
+
+  const result = await harness.tools.get("ask_question").execute(
+    "call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx,
+  );
+
+  assert.equal(result.details.cancelled, true);
+});
+
+test("ask_question closes active TUI on abort and removes its listener", async () => {
+  const harness = fakeHarness();
+  const controller = new AbortController();
+
+  const execution = harness.tools.get("ask_question").execute(
+    "call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx,
+  );
+  assert.equal(getEventListeners(controller.signal, "abort").length, 1);
+
+  controller.abort();
+  const result = await execution;
+
+  assert.equal(result.details.cancelled, true);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  harness.getCustomComponent().dispose();
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
+test("ask_question prompt guidelines identify the tool", () => {
+  const guidelines = fakeHarness().tools.get("ask_question").promptGuidelines;
+  assert.ok(guidelines.every((guideline: string) => guideline.includes("ask_question")));
 });
 
 test("ask_question renderCall shows count and ids, renderResult shows answers or cancelled", () => {
@@ -124,6 +244,51 @@ test("normalize auto-suffixes duplicate question ids", () => {
 test("normalize avoids collisions with user-supplied suffixed ids", () => {
   const result = normalize({ questions: [{ id: "x", question: "a?" }, { id: "x_2", question: "b?" }, { id: "x", question: "c?" }] });
   assert.deepEqual(result.map((q) => q.id), ["x", "x_2", "x_3"]);
+});
+
+test("normalize preserves all nonblank user options", () => {
+  const [question] = normalize({
+    question: "Pick?",
+    options: ["A", "Type a custom answer", "Done selecting", "Done selecting (2)"],
+  });
+  assert.deepEqual(question.options, ["A", "Type a custom answer", "Done selecting", "Done selecting (2)"]);
+});
+
+test("ask_question suffixes RPC controls past user option collisions", async () => {
+  const harness = fakeHarness();
+  harness.setMode("rpc");
+  harness.selections.push(
+    "Type a custom answer",
+    "Type a custom answer (2)",
+    "Done selecting",
+    "Done selecting (2)",
+    "Done selecting (3)",
+  );
+
+  const result = await harness.tools.get("ask_question").execute(
+    "call_1",
+    {
+      question: "Pick?",
+      options: ["Type a custom answer", "Type a custom answer (2)", "Done selecting", "Done selecting (2)"],
+      multiSelect: true,
+    },
+    undefined,
+    undefined,
+    harness.ctx,
+  );
+
+  assert.deepEqual(harness.dialogCalls[0]?.options, [
+    "Type a custom answer",
+    "Type a custom answer (2)",
+    "Done selecting",
+    "Done selecting (2)",
+    "Type a custom answer (3)",
+  ]);
+  assert.deepEqual(harness.dialogCalls.at(-1)?.options, ["Type a custom answer (3)", "Done selecting (3)"]);
+  assert.equal(
+    result.details.answers[0]?.answer,
+    "Type a custom answer, Type a custom answer (2), Done selecting, Done selecting (2)",
+  );
 });
 
 test("grill-me completes on off status", () => {
@@ -180,12 +345,16 @@ test("grill-me skips footer status outside TUI", async () => {
   assert.equal(harness.statuses.length, statusesBefore);
 });
 
-test("grill-me uses text questions outside TUI or when ask_question is inactive", async () => {
+test("grill-me uses ask_question with RPC UI and text without UI or an active tool", async () => {
   const harness = fakeHarness();
   await harness.commands.get("grill-me").handler("on", harness.ctx);
 
-  harness.setMode("print");
+  harness.setMode("rpc");
   let result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
+  assert.match(result.systemPrompt, /call ask_question first/);
+
+  harness.setMode("print");
+  result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
   assert.doesNotMatch(result.systemPrompt, /call ask_question first/);
   assert.match(result.systemPrompt, /ask clarifying questions first in normal text/);
 

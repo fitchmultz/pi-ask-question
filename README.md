@@ -1,6 +1,6 @@
 # pi ask-question extension
 
-A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_question`: a model-callable TUI tool for asking one or more clarifying questions before work continues. It also adds `/grill-me`, a mode that makes the agent pressure-test underspecified requests before doing the work.
+A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_question`: a model-callable tool with interactive UIs in TUI and RPC modes for asking one or more clarifying questions before work continues. It also adds `/grill-me`, a mode that makes the agent pressure-test underspecified requests before doing the work.
 
 ## What it does
 
@@ -53,7 +53,7 @@ Explicit commands:
 /grill-me status
 ```
 
-When enabled, the footer shows subtle `grill-mode` text, and the agent is told to walk the decision tree, inspect available repo evidence before asking, ask one blocking question at a time, and include its recommended answer first. In non-interactive runs, it asks in normal text instead.
+When enabled, the footer shows subtle `grill-mode` text, and the agent is told to walk the decision tree, inspect available repo evidence before asking, ask one blocking question at a time, and include its recommended answer first. It uses `ask_question` in TUI and RPC modes when the tool is active; in print and JSON modes, it asks in normal text instead.
 
 ## Tool shape
 
@@ -91,7 +91,9 @@ Ask several questions:
 
 - Options should be ordered from most recommended to least recommended.
 - Do not include a custom-answer option; the UI adds one.
-- `ask_question` requires pi TUI mode.
+- `ask_question` uses its full keyboard UI in TUI mode and sequential Pi dialogs in RPC mode.
+- Blank RPC custom answers return to option selection, matching TUI behavior; dismissing the input cancels.
+- Print and JSON modes return a tool error because they cannot collect user input.
 - `/grill-me` state is saved in the current session branch and survives `/reload`.
 - The footer status is cleared when `/grill-me` is disabled.
 - `Esc` cancels and reports cancellation to the model.
