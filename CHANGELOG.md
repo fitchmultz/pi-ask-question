@@ -10,7 +10,7 @@
 - Forward tool cancellation to TUI and RPC dialogs.
 - Keep print/JSON behavior explicit: the tool fails because no user-input UI is available.
 - Name `ask_question` in every prompt guideline as required by Pi's flattened prompt metadata.
-- Update development dependencies and validation to Pi 0.80.7.
+- Update development dependencies and validation to Pi 0.80.9 after auditing the unified model runtime and additive Kimi/model-catalog changes; this UI-focused extension requires no runtime API migration.
 
 ## 0.2.0 — 2026-06-24
 
