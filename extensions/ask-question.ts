@@ -1,5 +1,5 @@
-import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem } from "@earendil-works/pi-tui";
+import { defineTool, keyText, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -167,7 +167,6 @@ async function askWithKeyboard(
     const choices = () => [...(current()?.options ?? []), customOption()];
     const allAnswered = () => questions.every((question) => answers.has(question.id));
     const refresh = () => {
-      cachedWidth = undefined;
       cachedLines = undefined;
       tui.requestRender();
     };
@@ -356,7 +355,7 @@ async function askWithKeyboard(
       }
 
       if (tab === submitTab) {
-        add(theme.bold("Review answers"));
+        addWrapped(theme.bold("Review answers"));
         add();
         for (const question of questions) {
           addWrapped(answers.get(question.id)?.answer ?? "unanswered", {
@@ -366,7 +365,7 @@ async function askWithKeyboard(
           });
         }
         add();
-        addWrapped(allAnswered() ? "Enter to submit" : "Answer all questions before submitting", {
+        addWrapped(allAnswered() ? `${keyText("tui.select.confirm")} to submit` : "Answer all questions before submitting", {
           style: (text) => theme.fg(allAnswered() ? "success" : "warning", text),
         });
       } else {
@@ -391,16 +390,32 @@ async function askWithKeyboard(
         });
         if (editing) {
           add();
-          add(theme.fg("muted", "Your answer:"));
-          for (const line of editor.render(Math.max(1, width - 2))) add(` ${line}`);
+          addWrapped(theme.fg("muted", "Your answer:"));
+          const indent = width > 1 ? " " : "";
+          const editorWidth = Math.max(1, width - visibleWidth(indent));
+          for (const line of editor.render(editorWidth)) {
+            if (visibleWidth(line) <= editorWidth) {
+              add(`${indent}${line}`);
+              continue;
+            }
+            const cursorIndex = line.indexOf(CURSOR_MARKER);
+            if (cursorIndex === -1) {
+              add(`${indent}${sliceByColumn(line, 0, editorWidth, true)}`);
+              continue;
+            }
+            const before = line.slice(0, cursorIndex);
+            const fromCursor = line.slice(cursorIndex);
+            const beforeWidth = Math.min(visibleWidth(before), Math.max(0, editorWidth - 1));
+            add(`${indent}${sliceByColumn(before, visibleWidth(before) - beforeWidth, beforeWidth, true)}${sliceByColumn(fromCursor, 0, editorWidth - beforeWidth, true)}`);
+          }
         }
       }
 
       add();
       addWrapped(
         showTabs
-          ? "←/→ questions • ↑/↓ options • Space toggle multi-select • Enter next/submit • Esc cancel"
-          : "↑/↓ options • Enter select • Esc cancel",
+          ? `←/→ or ${keyText("tui.input.tab")} questions • ${keyText("tui.select.up")}/${keyText("tui.select.down")} options • Space toggle multi-select • ${keyText("tui.select.confirm")} next/submit • ${keyText("tui.select.cancel")} cancel`
+          : `${keyText("tui.select.up")}/${keyText("tui.select.down")} options • ${keyText("tui.select.confirm")} select • ${keyText("tui.select.cancel")} cancel`,
         { style: (text) => theme.fg("dim", text) },
       );
       add(border);
@@ -411,13 +426,15 @@ async function askWithKeyboard(
 
     return {
       get focused() { return editor.focused; },
-      set focused(value: boolean) { editor.focused = value; },
+      set focused(value: boolean) {
+        if (editor.focused === value) return;
+        editor.focused = value;
+        cachedLines = undefined;
+        tui.requestRender();
+      },
       render,
       handleInput,
-      invalidate: () => {
-        cachedWidth = undefined;
-        cachedLines = undefined;
-      },
+      invalidate: () => { cachedLines = undefined; },
       dispose: () => signal?.removeEventListener("abort", abort),
     };
   });

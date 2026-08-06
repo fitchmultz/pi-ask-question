@@ -4,10 +4,9 @@
 
 ## 0.3.0 — 2026-08-06
 
-- Require Pi 0.84.0 or later and pin development dependencies to the released runtime.
+- Require Pi 0.84.0 or later.
 - Keep the interactive question layout width-safe after terminal resizes, including Pi 0.84's fullscreen TUI mode.
 - Forward custom-component focus to the embedded editor so IME candidate windows follow the active answer field.
-- Verify the extension against Pi 0.84.0's released docs, implementation, emitted types, package loader, TUI, and RPC UI protocol.
 - Add `/grill-me` pressure-test mode that survives `/reload`.
 - Tighten `/grill-me` prompts to inspect first, walk the decision tree, and ask one recommended question at a time.
 - Support `ask_question` through Pi's RPC extension UI protocol, including ordered multi-question and multi-select flows.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import test from "node:test";
-import { CURSOR_MARKER, Key, matchesKey, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
 function fakeHarness() {
@@ -40,17 +40,7 @@ function fakeHarness() {
         return inputs.shift();
       },
       custom: (factory: any) => new Promise((resolve) => {
-        const defaultKeys: Record<string, KeyId> = {
-          "tui.input.tab": Key.tab,
-          "tui.select.up": Key.up,
-          "tui.select.down": Key.down,
-          "tui.select.confirm": Key.enter,
-          "tui.select.cancel": Key.escape,
-        };
-        const keybindings = {
-          matches: (data: string, id: string) => matchesKey(data, defaultKeys[id] ?? id as KeyId),
-        };
-        customComponent = factory({ requestRender() {}, terminal: { rows: 24, columns: 80 } }, theme, keybindings, (value: unknown) => {
+        customComponent = factory({ requestRender() {}, terminal: { rows: 24, columns: 80 } }, theme, getKeybindings(), (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });
@@ -197,19 +187,27 @@ test("ask_question reflows after terminal resize and forwards focus to its edito
   );
 
   const component = harness.getCustomComponent();
+  const assertFits = (width: number) => {
+    const overflow = component.render(width).filter((line: string) => visibleWidth(line) > width);
+    assert.deepEqual(overflow, []);
+  };
+
   component.render(80);
-  let narrow = component.render(20);
-  assert.ok(narrow.every((line: string) => visibleWidth(line) <= 20));
+  for (const width of [20, 13, 11, 1]) assertFits(width);
 
   component.handleInput("\u001b[C");
   component.handleInput("\u001b[C");
-  narrow = component.render(20);
-  assert.ok(narrow.every((line: string) => visibleWidth(line) <= 20));
+  for (const width of [20, 13, 11, 1]) assertFits(width);
 
   component.handleInput("\u001b[C");
   component.focused = true;
   component.handleInput("\r");
   component.handleInput("x");
+  for (const width of [20, 13, 11, 1]) assertFits(width);
+  assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
+  component.focused = false;
+  assert.ok(component.render(20).every((line: string) => !line.includes(CURSOR_MARKER)));
+  component.focused = true;
   assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
   component.handleInput("\u001b");
   component.handleInput("\u001b");
