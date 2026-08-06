@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, setKeybindings, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -144,7 +144,6 @@ async function askWithKeyboard(
     const multiAnswers = new Map<string, Set<string>>();
     const customAnswers = new Map<string, string>();
     const keyText = (binding: Keybinding) => keys.getKeys(binding).join("/");
-    setKeybindings(keys);
     const editor = new Editor(tui, {
       borderColor: (text) => theme.fg("accent", text),
       selectList: {
