@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-08-06
+
+- Require Pi 0.84.0 or later.
+- Keep the interactive question layout width-safe after terminal resizes, including Pi 0.84's fullscreen TUI mode.
+- Forward custom-component focus to the embedded editor so IME candidate windows follow the active answer field.
 - Add `/grill-me` pressure-test mode that survives `/reload`.
 - Tighten `/grill-me` prompts to inspect first, walk the decision tree, and ask one recommended question at a time.
 - Support `ask_question` through Pi's RPC extension UI protocol, including ordered multi-question and multi-select flows.
@@ -10,7 +15,6 @@
 - Forward tool cancellation to TUI and RPC dialogs.
 - Keep print/JSON behavior explicit: the tool fails because no user-input UI is available.
 - Name `ask_question` in every prompt guideline as required by Pi's flattened prompt metadata.
-- Update development dependencies and validation to Pi 0.80.9 after auditing the unified model runtime and additive Kimi/model-catalog changes; this UI-focused extension requires no runtime API migration.
 
 ## 0.2.0 — 2026-06-24
 

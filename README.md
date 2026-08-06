@@ -11,15 +11,13 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 - Returns answers in tool result text and structured `details`
 - Adds `/grill-me` to toggle pressure-test mode
 
+## Requirements
+
+- Pi 0.84.0 or later
+
 ## Install
 
-Install it from npm with pi:
-
-```bash
-pi install npm:pi-ask-question
-```
-
-Or install it directly from GitHub with pi:
+Install it directly from GitHub with pi:
 
 ```bash
 pi install https://github.com/fitchmultz/pi-ask-question
@@ -96,7 +94,7 @@ Ask several questions:
 - Print and JSON modes return a tool error because they cannot collect user input.
 - `/grill-me` state is saved in the current session branch and survives `/reload`.
 - The footer status is cleared when `/grill-me` is disabled.
-- `Esc` cancels and reports cancellation to the model.
+- The configured selection-cancel binding cancels and reports cancellation to the model.
 
 ## Development
 

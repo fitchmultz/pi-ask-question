@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Editor, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -139,10 +139,11 @@ async function askWithKeyboard(
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   if (signal?.aborted) return { answers: [], cancelled: true };
-  return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, _keys, done) => {
+  return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, keys, done) => {
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
     const customAnswers = new Map<string, string>();
+    const keyText = (binding: Keybinding) => keys.getKeys(binding).join("/");
     const editor = new Editor(tui, {
       borderColor: (text) => theme.fg("accent", text),
       selectList: {
@@ -157,6 +158,7 @@ async function askWithKeyboard(
     let tab = 0;
     let option = 0;
     let editing = false;
+    let cachedWidth: number | undefined;
     let cachedLines: string[] | undefined;
 
     const submitTab = questions.length;
@@ -265,7 +267,7 @@ async function askWithKeyboard(
 
     function handleInput(data: string) {
       if (editing) {
-        if (matchesKey(data, Key.escape)) {
+        if (keys.matches(data, "tui.select.cancel")) {
           editing = false;
           editor.setText("");
           refresh();
@@ -276,23 +278,23 @@ async function askWithKeyboard(
         return;
       }
 
-      if (showTabs && (matchesKey(data, Key.right) || matchesKey(data, Key.tab))) return moveTab(tab + 1);
+      if (showTabs && (matchesKey(data, Key.right) || keys.matches(data, "tui.input.tab"))) return moveTab(tab + 1);
       if (showTabs && (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab")))) return moveTab(tab - 1);
-      if (matchesKey(data, Key.escape)) return finish(true);
+      if (keys.matches(data, "tui.select.cancel")) return finish(true);
 
       if (tab === submitTab) {
-        if (matchesKey(data, Key.enter) && allAnswered()) finish(false);
+        if (keys.matches(data, "tui.select.confirm") && allAnswered()) finish(false);
         return;
       }
 
       const question = current();
       const options = choices();
-      if (matchesKey(data, Key.up)) {
+      if (keys.matches(data, "tui.select.up")) {
         option = Math.max(0, option - 1);
         refresh();
         return;
       }
-      if (matchesKey(data, Key.down)) {
+      if (keys.matches(data, "tui.select.down")) {
         option = Math.min(options.length - 1, option + 1);
         refresh();
         return;
@@ -303,7 +305,7 @@ async function askWithKeyboard(
         else if (picked) toggleMultiChoice(question, picked);
         return;
       }
-      if (matchesKey(data, Key.enter)) {
+      if (keys.matches(data, "tui.select.confirm")) {
         const picked = options[option];
         if (picked === customOption()) {
           startCustomEdit(question);
@@ -316,9 +318,9 @@ async function askWithKeyboard(
     }
 
     function render(width: number): string[] {
-      if (cachedLines) return cachedLines;
+      if (cachedLines && cachedWidth === width) return cachedLines;
       const lines: string[] = [];
-      const add = (line = "") => lines.push(line);
+      const add = (line = "") => lines.push(visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line);
       const addWrapped = (
         text: string,
         options: { firstPrefix?: string; restPrefix?: string; style?: (text: string) => string; prefixStyle?: (text: string) => string } = {},
@@ -327,8 +329,12 @@ async function askWithKeyboard(
         const restPrefix = options.restPrefix ?? "";
         const style = options.style ?? ((value: string) => value);
         const prefixStyle = options.prefixStyle ?? ((value: string) => value);
-        const contentWidth = Math.max(1, width - visibleWidth(firstPrefix));
-        const wrapped = wrapTextWithAnsi(style(text), contentWidth);
+        const prefixWidth = visibleWidth(firstPrefix);
+        if (prefixWidth >= width) {
+          for (const line of wrapTextWithAnsi(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
+          return;
+        }
+        const wrapped = wrapTextWithAnsi(style(text), width - prefixWidth);
         add(`${prefixStyle(firstPrefix)}${wrapped[0] ?? ""}`);
         for (let index = 1; index < wrapped.length; index += 1) add(`${prefixStyle(restPrefix)}${wrapped[index]}`);
       };
@@ -336,7 +342,7 @@ async function askWithKeyboard(
 
       add(border);
       if (showTabs) {
-        add(
+        addWrapped(
           [
             ...questions.map((question, index) => {
               const marker = answers.has(question.id) ? "■" : "□";
@@ -350,7 +356,7 @@ async function askWithKeyboard(
       }
 
       if (tab === submitTab) {
-        add(theme.bold("Review answers"));
+        addWrapped(theme.bold("Review answers"));
         add();
         for (const question of questions) {
           addWrapped(answers.get(question.id)?.answer ?? "unanswered", {
@@ -360,7 +366,7 @@ async function askWithKeyboard(
           });
         }
         add();
-        addWrapped(allAnswered() ? "Enter to submit" : "Answer all questions before submitting", {
+        addWrapped(allAnswered() ? `${keyText("tui.select.confirm")} to submit` : "Answer all questions before submitting", {
           style: (text) => theme.fg(allAnswered() ? "success" : "warning", text),
         });
       } else {
@@ -385,24 +391,41 @@ async function askWithKeyboard(
         });
         if (editing) {
           add();
-          add(theme.fg("muted", "Your answer:"));
-          for (const line of editor.render(Math.max(1, width - 2))) add(` ${line}`);
+          addWrapped(theme.fg("muted", "Your answer:"));
+          const indent = width > 1 ? " " : "";
+          const editorWidth = Math.max(1, width - visibleWidth(indent));
+          for (const line of editor.render(Math.max(3, editorWidth))) {
+            const cursorIndex = line.indexOf(CURSOR_MARKER);
+            const cursorColumn = cursorIndex === -1 ? 0 : visibleWidth(line.slice(0, cursorIndex));
+            const startColumn = Math.max(0, cursorColumn - editorWidth + 1);
+            add(`${indent}${sliceByColumn(line, startColumn, editorWidth, true)}`);
+          }
         }
       }
 
       add();
       addWrapped(
-        showTabs
-          ? "←/→ questions • ↑/↓ options • Space toggle multi-select • Enter next/submit • Esc cancel"
-          : "↑/↓ options • Enter select • Esc cancel",
+        editing
+          ? `${keyText("tui.input.submit")} save answer • ${keyText("tui.select.cancel")} cancel edit`
+          : showTabs
+            ? `←/→ or ${keyText("tui.input.tab")} questions • ${keyText("tui.select.up")}/${keyText("tui.select.down")} options • Space toggle multi-select • ${keyText("tui.select.confirm")} next/submit • ${keyText("tui.select.cancel")} cancel`
+            : `${keyText("tui.select.up")}/${keyText("tui.select.down")} options • ${keyText("tui.select.confirm")} select • ${keyText("tui.select.cancel")} cancel`,
         { style: (text) => theme.fg("dim", text) },
       );
       add(border);
+      cachedWidth = width;
       cachedLines = lines;
       return lines;
     }
 
     return {
+      get focused() { return editor.focused; },
+      set focused(value: boolean) {
+        if (editor.focused === value) return;
+        editor.focused = value;
+        cachedLines = undefined;
+        tui.requestRender();
+      },
       render,
       handleInput,
       invalidate: () => { cachedLines = undefined; },

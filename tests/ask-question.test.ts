@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import test from "node:test";
+import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
 function fakeHarness() {
@@ -39,7 +40,7 @@ function fakeHarness() {
         return inputs.shift();
       },
       custom: (factory: any) => new Promise((resolve) => {
-        customComponent = factory({ requestRender() {} }, theme, {}, (value: unknown) => {
+        customComponent = factory({ requestRender() {}, terminal: { rows: 24, columns: 80 } }, theme, getKeybindings(), (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });
@@ -170,6 +171,117 @@ test("ask_question returns TUI cancellation when already aborted", async () => {
   );
 
   assert.equal(result.details.cancelled, true);
+});
+
+test("ask_question reflows after terminal resize and forwards focus to its editor", async () => {
+  const harness = fakeHarness();
+  const execution = harness.tools.get("ask_question").execute(
+    "call_1",
+    { questions: [
+      { id: "this_identifier_is_far_too_long", question: "漢🙂 A deliberately long question that must wrap when the terminal becomes narrow?" },
+      { id: "second", question: "Second question?" },
+    ] },
+    undefined,
+    undefined,
+    harness.ctx,
+  );
+
+  const component = harness.getCustomComponent();
+  const assertFits = (width: number) => {
+    const overflow = component.render(width).filter((line: string) => visibleWidth(line) > width);
+    assert.deepEqual(overflow, []);
+  };
+  const narrowWidths = [20, 13, 11, 3, 2, 1];
+
+  component.render(80);
+  for (const width of narrowWidths) assertFits(width);
+
+  component.handleInput("\u001b[C");
+  component.handleInput("\u001b[C");
+  for (const width of narrowWidths) assertFits(width);
+
+  component.handleInput("\u001b[C");
+  component.focused = true;
+  component.handleInput("\r");
+  component.handleInput("漢🙂");
+  for (const width of narrowWidths) assertFits(width);
+  assert.ok(component.render(1).some((line: string) => line.includes(CURSOR_MARKER)));
+  assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
+  component.focused = false;
+  assert.ok(component.render(20).every((line: string) => !line.includes(CURSOR_MARKER)));
+  component.focused = true;
+  assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
+  component.handleInput("\u001b");
+  component.handleInput("\u001b");
+  await execution;
+});
+
+test("ask_question keeps wide options and answered review within narrow widths", async () => {
+  const harness = fakeHarness();
+  const execution = harness.tools.get("ask_question").execute(
+    "call_1",
+    { questions: [
+      { question: "First?", options: ["漢🙂 option"] },
+      { question: "Second?", options: ["Yes"] },
+    ] },
+    undefined,
+    undefined,
+    harness.ctx,
+  );
+  const component = harness.getCustomComponent();
+  const assertFits = (width: number) => {
+    assert.ok(component.render(width).every((line: string) => visibleWidth(line) <= width));
+  };
+
+  for (const width of [3, 2, 1]) assertFits(width);
+  component.handleInput("\r");
+  component.handleInput("\r");
+  for (const width of [3, 2, 1]) assertFits(width);
+  component.handleInput("\u001b");
+  await execution;
+});
+
+test("ask_question shows and honors configured editor bindings", async () => {
+  const originalKeybindings = getKeybindings();
+  setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, {
+    "tui.input.submit": "ctrl+s",
+    "tui.select.confirm": "ctrl+y",
+    "tui.select.cancel": "ctrl+x",
+  }));
+
+  try {
+    const harness = fakeHarness();
+    const execution = harness.tools.get("ask_question").execute(
+      "call_1", { question: "Choose?", options: ["First", "Second"] }, undefined, undefined, harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    component.handleInput("\u001b[B");
+    component.handleInput("\u001b[B");
+    component.handleInput("\u0019");
+
+    const editingLines = component.render(80);
+    assert.match(editingLines.join("\n"), /ctrl\+s save answer/);
+    assert.ok(editingLines.every((line: string) => !line.includes("ctrl+y next/submit")));
+    component.handleInput("\u0019");
+    assert.ok(component.render(80).some((line: string) => line.includes("Your answer:")));
+    component.handleInput("\u0018");
+    assert.ok(component.render(80).every((line: string) => !line.includes("Your answer:")));
+    component.handleInput("\u0019");
+
+    component.handleInput("Custom");
+    component.handleInput("\u0013");
+    const result = await execution;
+    assert.equal(result.details.answers[0].answer, "Custom");
+
+    const cancelledHarness = fakeHarness();
+    const cancelledExecution = cancelledHarness.tools.get("ask_question").execute(
+      "call_2", { question: "Cancel?" }, undefined, undefined, cancelledHarness.ctx,
+    );
+    cancelledHarness.getCustomComponent().handleInput("\u0018");
+    assert.equal((await cancelledExecution).details.cancelled, true);
+  } finally {
+    setKeybindings(originalKeybindings);
+  }
 });
 
 test("ask_question closes active TUI on abort and removes its listener", async () => {
