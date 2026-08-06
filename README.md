@@ -11,6 +11,10 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 - Returns answers in tool result text and structured `details`
 - Adds `/grill-me` to toggle pressure-test mode
 
+## Requirements
+
+- Pi 0.84.0 or later
+
 ## Install
 
 Install it from npm with pi:

@@ -139,7 +139,7 @@ async function askWithKeyboard(
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   if (signal?.aborted) return { answers: [], cancelled: true };
-  return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, _keys, done) => {
+  return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, keys, done) => {
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
     const customAnswers = new Map<string, string>();
@@ -157,6 +157,7 @@ async function askWithKeyboard(
     let tab = 0;
     let option = 0;
     let editing = false;
+    let cachedWidth: number | undefined;
     let cachedLines: string[] | undefined;
 
     const submitTab = questions.length;
@@ -166,6 +167,7 @@ async function askWithKeyboard(
     const choices = () => [...(current()?.options ?? []), customOption()];
     const allAnswered = () => questions.every((question) => answers.has(question.id));
     const refresh = () => {
+      cachedWidth = undefined;
       cachedLines = undefined;
       tui.requestRender();
     };
@@ -265,7 +267,7 @@ async function askWithKeyboard(
 
     function handleInput(data: string) {
       if (editing) {
-        if (matchesKey(data, Key.escape)) {
+        if (keys.matches(data, "tui.select.cancel")) {
           editing = false;
           editor.setText("");
           refresh();
@@ -276,23 +278,23 @@ async function askWithKeyboard(
         return;
       }
 
-      if (showTabs && (matchesKey(data, Key.right) || matchesKey(data, Key.tab))) return moveTab(tab + 1);
+      if (showTabs && (matchesKey(data, Key.right) || keys.matches(data, "tui.input.tab"))) return moveTab(tab + 1);
       if (showTabs && (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab")))) return moveTab(tab - 1);
-      if (matchesKey(data, Key.escape)) return finish(true);
+      if (keys.matches(data, "tui.select.cancel")) return finish(true);
 
       if (tab === submitTab) {
-        if (matchesKey(data, Key.enter) && allAnswered()) finish(false);
+        if (keys.matches(data, "tui.select.confirm") && allAnswered()) finish(false);
         return;
       }
 
       const question = current();
       const options = choices();
-      if (matchesKey(data, Key.up)) {
+      if (keys.matches(data, "tui.select.up")) {
         option = Math.max(0, option - 1);
         refresh();
         return;
       }
-      if (matchesKey(data, Key.down)) {
+      if (keys.matches(data, "tui.select.down")) {
         option = Math.min(options.length - 1, option + 1);
         refresh();
         return;
@@ -303,7 +305,7 @@ async function askWithKeyboard(
         else if (picked) toggleMultiChoice(question, picked);
         return;
       }
-      if (matchesKey(data, Key.enter)) {
+      if (keys.matches(data, "tui.select.confirm")) {
         const picked = options[option];
         if (picked === customOption()) {
           startCustomEdit(question);
@@ -316,7 +318,7 @@ async function askWithKeyboard(
     }
 
     function render(width: number): string[] {
-      if (cachedLines) return cachedLines;
+      if (cachedLines && cachedWidth === width) return cachedLines;
       const lines: string[] = [];
       const add = (line = "") => lines.push(line);
       const addWrapped = (
@@ -327,8 +329,12 @@ async function askWithKeyboard(
         const restPrefix = options.restPrefix ?? "";
         const style = options.style ?? ((value: string) => value);
         const prefixStyle = options.prefixStyle ?? ((value: string) => value);
-        const contentWidth = Math.max(1, width - visibleWidth(firstPrefix));
-        const wrapped = wrapTextWithAnsi(style(text), contentWidth);
+        const prefixWidth = visibleWidth(firstPrefix);
+        if (prefixWidth >= width) {
+          for (const line of wrapTextWithAnsi(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
+          return;
+        }
+        const wrapped = wrapTextWithAnsi(style(text), width - prefixWidth);
         add(`${prefixStyle(firstPrefix)}${wrapped[0] ?? ""}`);
         for (let index = 1; index < wrapped.length; index += 1) add(`${prefixStyle(restPrefix)}${wrapped[index]}`);
       };
@@ -336,7 +342,7 @@ async function askWithKeyboard(
 
       add(border);
       if (showTabs) {
-        add(
+        addWrapped(
           [
             ...questions.map((question, index) => {
               const marker = answers.has(question.id) ? "■" : "□";
@@ -398,14 +404,20 @@ async function askWithKeyboard(
         { style: (text) => theme.fg("dim", text) },
       );
       add(border);
+      cachedWidth = width;
       cachedLines = lines;
       return lines;
     }
 
     return {
+      get focused() { return editor.focused; },
+      set focused(value: boolean) { editor.focused = value; },
       render,
       handleInput,
-      invalidate: () => { cachedLines = undefined; },
+      invalidate: () => {
+        cachedWidth = undefined;
+        cachedLines = undefined;
+      },
       dispose: () => signal?.removeEventListener("abort", abort),
     };
   });

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import test from "node:test";
+import { CURSOR_MARKER, Key, matchesKey, visibleWidth, type KeyId } from "@earendil-works/pi-tui";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
 function fakeHarness() {
@@ -39,7 +40,17 @@ function fakeHarness() {
         return inputs.shift();
       },
       custom: (factory: any) => new Promise((resolve) => {
-        customComponent = factory({ requestRender() {} }, theme, {}, (value: unknown) => {
+        const defaultKeys: Record<string, KeyId> = {
+          "tui.input.tab": Key.tab,
+          "tui.select.up": Key.up,
+          "tui.select.down": Key.down,
+          "tui.select.confirm": Key.enter,
+          "tui.select.cancel": Key.escape,
+        };
+        const keybindings = {
+          matches: (data: string, id: string) => matchesKey(data, defaultKeys[id] ?? id as KeyId),
+        };
+        customComponent = factory({ requestRender() {}, terminal: { rows: 24, columns: 80 } }, theme, keybindings, (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });
@@ -170,6 +181,39 @@ test("ask_question returns TUI cancellation when already aborted", async () => {
   );
 
   assert.equal(result.details.cancelled, true);
+});
+
+test("ask_question reflows after terminal resize and forwards focus to its editor", async () => {
+  const harness = fakeHarness();
+  const execution = harness.tools.get("ask_question").execute(
+    "call_1",
+    { questions: [
+      { id: "this_identifier_is_far_too_long", question: "A deliberately long question that must wrap when the terminal becomes narrow?" },
+      { id: "second", question: "Second question?" },
+    ] },
+    undefined,
+    undefined,
+    harness.ctx,
+  );
+
+  const component = harness.getCustomComponent();
+  component.render(80);
+  let narrow = component.render(20);
+  assert.ok(narrow.every((line: string) => visibleWidth(line) <= 20));
+
+  component.handleInput("\u001b[C");
+  component.handleInput("\u001b[C");
+  narrow = component.render(20);
+  assert.ok(narrow.every((line: string) => visibleWidth(line) <= 20));
+
+  component.handleInput("\u001b[C");
+  component.focused = true;
+  component.handleInput("\r");
+  component.handleInput("x");
+  assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
+  component.handleInput("\u001b");
+  component.handleInput("\u001b");
+  await execution;
 });
 
 test("ask_question closes active TUI on abort and removes its listener", async () => {
