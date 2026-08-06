@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import test from "node:test";
-import { CURSOR_MARKER, getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
 function fakeHarness() {
@@ -178,7 +178,7 @@ test("ask_question reflows after terminal resize and forwards focus to its edito
   const execution = harness.tools.get("ask_question").execute(
     "call_1",
     { questions: [
-      { id: "this_identifier_is_far_too_long", question: "A deliberately long question that must wrap when the terminal becomes narrow?" },
+      { id: "this_identifier_is_far_too_long", question: "漢🙂 A deliberately long question that must wrap when the terminal becomes narrow?" },
       { id: "second", question: "Second question?" },
     ] },
     undefined,
@@ -191,19 +191,21 @@ test("ask_question reflows after terminal resize and forwards focus to its edito
     const overflow = component.render(width).filter((line: string) => visibleWidth(line) > width);
     assert.deepEqual(overflow, []);
   };
+  const narrowWidths = [20, 13, 11, 3, 2, 1];
 
   component.render(80);
-  for (const width of [20, 13, 11, 1]) assertFits(width);
+  for (const width of narrowWidths) assertFits(width);
 
   component.handleInput("\u001b[C");
   component.handleInput("\u001b[C");
-  for (const width of [20, 13, 11, 1]) assertFits(width);
+  for (const width of narrowWidths) assertFits(width);
 
   component.handleInput("\u001b[C");
   component.focused = true;
   component.handleInput("\r");
-  component.handleInput("x");
-  for (const width of [20, 13, 11, 1]) assertFits(width);
+  component.handleInput("漢🙂");
+  for (const width of narrowWidths) assertFits(width);
+  assert.ok(component.render(1).some((line: string) => line.includes(CURSOR_MARKER)));
   assert.ok(component.render(20).some((line: string) => line.includes(CURSOR_MARKER)));
   component.focused = false;
   assert.ok(component.render(20).every((line: string) => !line.includes(CURSOR_MARKER)));
@@ -212,6 +214,39 @@ test("ask_question reflows after terminal resize and forwards focus to its edito
   component.handleInput("\u001b");
   component.handleInput("\u001b");
   await execution;
+});
+
+test("ask_question shows and honors configured editor bindings", async () => {
+  const originalKeybindings = getKeybindings();
+  setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, {
+    "tui.input.submit": "ctrl+s",
+    "tui.select.confirm": "ctrl+y",
+    "tui.select.cancel": "ctrl+x",
+  }));
+
+  try {
+    const harness = fakeHarness();
+    const execution = harness.tools.get("ask_question").execute(
+      "call_1", { question: "Choose?", options: ["First", "Second"] }, undefined, undefined, harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    component.handleInput("\u001b[B");
+    component.handleInput("\u001b[B");
+    component.handleInput("\u0019");
+
+    const editingLines = component.render(80);
+    assert.match(editingLines.join("\n"), /ctrl\+s save answer/);
+    assert.ok(editingLines.every((line: string) => !line.includes("ctrl+y next/submit")));
+    component.handleInput("\u0019");
+    assert.ok(component.render(80).some((line: string) => line.includes("Your answer:")));
+
+    component.handleInput("Custom");
+    component.handleInput("\u0013");
+    const result = await execution;
+    assert.equal(result.details.answers[0].answer, "Custom");
+  } finally {
+    setKeybindings(originalKeybindings);
+  }
 });
 
 test("ask_question closes active TUI on abort and removes its listener", async () => {

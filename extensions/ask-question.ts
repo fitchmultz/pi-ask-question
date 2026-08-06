@@ -1,5 +1,5 @@
-import { defineTool, keyText, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem } from "@earendil-works/pi-tui";
+import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { CURSOR_MARKER, Editor, Key, matchesKey, setKeybindings, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -143,6 +143,8 @@ async function askWithKeyboard(
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
     const customAnswers = new Map<string, string>();
+    const keyText = (binding: Keybinding) => keys.getKeys(binding).join("/");
+    setKeybindings(keys);
     const editor = new Editor(tui, {
       borderColor: (text) => theme.fg("accent", text),
       selectList: {
@@ -319,7 +321,7 @@ async function askWithKeyboard(
     function render(width: number): string[] {
       if (cachedLines && cachedWidth === width) return cachedLines;
       const lines: string[] = [];
-      const add = (line = "") => lines.push(line);
+      const add = (line = "") => lines.push(visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line);
       const addWrapped = (
         text: string,
         options: { firstPrefix?: string; restPrefix?: string; style?: (text: string) => string; prefixStyle?: (text: string) => string } = {},
@@ -393,29 +395,22 @@ async function askWithKeyboard(
           addWrapped(theme.fg("muted", "Your answer:"));
           const indent = width > 1 ? " " : "";
           const editorWidth = Math.max(1, width - visibleWidth(indent));
-          for (const line of editor.render(editorWidth)) {
-            if (visibleWidth(line) <= editorWidth) {
-              add(`${indent}${line}`);
-              continue;
-            }
+          for (const line of editor.render(Math.max(3, editorWidth))) {
             const cursorIndex = line.indexOf(CURSOR_MARKER);
-            if (cursorIndex === -1) {
-              add(`${indent}${sliceByColumn(line, 0, editorWidth, true)}`);
-              continue;
-            }
-            const before = line.slice(0, cursorIndex);
-            const fromCursor = line.slice(cursorIndex);
-            const beforeWidth = Math.min(visibleWidth(before), Math.max(0, editorWidth - 1));
-            add(`${indent}${sliceByColumn(before, visibleWidth(before) - beforeWidth, beforeWidth, true)}${sliceByColumn(fromCursor, 0, editorWidth - beforeWidth, true)}`);
+            const cursorColumn = cursorIndex === -1 ? 0 : visibleWidth(line.slice(0, cursorIndex));
+            const startColumn = Math.max(0, cursorColumn - editorWidth + 1);
+            add(`${indent}${sliceByColumn(line, startColumn, editorWidth, true)}`);
           }
         }
       }
 
       add();
       addWrapped(
-        showTabs
-          ? `←/→ or ${keyText("tui.input.tab")} questions • ${keyText("tui.select.up")}/${keyText("tui.select.down")} options • Space toggle multi-select • ${keyText("tui.select.confirm")} next/submit • ${keyText("tui.select.cancel")} cancel`
-          : `${keyText("tui.select.up")}/${keyText("tui.select.down")} options • ${keyText("tui.select.confirm")} select • ${keyText("tui.select.cancel")} cancel`,
+        editing
+          ? `${keyText("tui.input.submit")} save answer • ${keyText("tui.select.cancel")} cancel edit`
+          : showTabs
+            ? `←/→ or ${keyText("tui.input.tab")} questions • ${keyText("tui.select.up")}/${keyText("tui.select.down")} options • Space toggle multi-select • ${keyText("tui.select.confirm")} next/submit • ${keyText("tui.select.cancel")} cancel`
+            : `${keyText("tui.select.up")}/${keyText("tui.select.down")} options • ${keyText("tui.select.confirm")} select • ${keyText("tui.select.cancel")} cancel`,
         { style: (text) => theme.fg("dim", text) },
       );
       add(border);
