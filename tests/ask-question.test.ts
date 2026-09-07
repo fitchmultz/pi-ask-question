@@ -156,8 +156,10 @@ test("ask_question reports RPC cancellation and forwards the abort signal", asyn
 
   const result = await tool.execute("call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx);
 
-  assert.equal(harness.dialogCalls[0]?.signal, controller.signal);
+  controller.abort();
+  assert.equal(harness.dialogCalls[0]?.signal?.aborted, true);
   assert.equal(result.details.cancelled, true);
+  assert.equal(result.details.timedOut, false);
   assert.match(result.content[0].text, /cancelled/);
 });
 
@@ -291,8 +293,6 @@ test("ask_question closes active TUI on abort and removes its listener", async (
   const execution = harness.tools.get("ask_question").execute(
     "call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx,
   );
-  assert.equal(getEventListeners(controller.signal, "abort").length, 1);
-
   controller.abort();
   const result = await execution;
 
@@ -301,6 +301,152 @@ test("ask_question closes active TUI on abort and removes its listener", async (
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
   harness.getCustomComponent().dispose();
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
+function pendingDialog(_title: string, _options?: string[] | string, opts?: { signal?: AbortSignal }): Promise<undefined> {
+  return new Promise((resolve) => {
+    if (opts?.signal?.aborted) resolve(undefined);
+    else opts?.signal?.addEventListener("abort", () => resolve(undefined), { once: true });
+  });
+}
+
+test("ask_question returns the AFK reply at exactly five minutes without choosing an option", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = fakeHarness();
+  const controller = new AbortController();
+  const tool = harness.tools.get("ask_question");
+  const execution = tool.execute("timeout", { question: "Choose?", options: ["First", "Second"] }, controller.signal, undefined, harness.ctx);
+  const component = harness.getCustomComponent();
+
+  t.mock.timers.tick(299_999);
+  assert.equal(harness.getCustomDoneCalls(), 0);
+  t.mock.timers.tick(1);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+  const result = await execution;
+  assert.match(component.render(80).join("\n"), /Auto-continues after 5 minutes/);
+
+  assert.deepEqual(result.details.answers, []);
+  assert.equal(result.details.timedOut, true);
+  assert.equal(result.details.cancelled, false);
+  assert.equal(controller.signal.aborted, false);
+  assert.equal(result.content[0].text, "Timed out after 5 minutes. Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.");
+  const rendered = tool.renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx).render(80).join("\n");
+  assert.match(rendered, /Timed out after 5 minutes/);
+  assert.match(rendered, /AFK/);
+  assert.doesNotMatch(rendered, /Cancelled|✓|User answered/);
+  controller.abort();
+  t.mock.timers.tick(300_000);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+});
+
+test("ask_question preserves saved TUI answers and multi-select choices but not unfinished typing", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = fakeHarness();
+  const execution = harness.tools.get("ask_question").execute("partial", {
+    questions: [
+      { question: "First?", options: ["A"] },
+      { question: "Second?", options: ["B"], multiSelect: true },
+    ],
+  }, undefined, undefined, harness.ctx);
+  const component = harness.getCustomComponent();
+  t.mock.timers.tick(200_000);
+  component.handleInput("\r");
+  component.handleInput(" ");
+  component.handleInput("\u001b[B");
+  component.handleInput("\r");
+  component.handleInput("Unfinished draft");
+  t.mock.timers.tick(100_000);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+  const result = await execution;
+
+  assert.equal(result.details.timedOut, true);
+  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["A", "B"]);
+  assert.match(result.content[0].text, /Answers already provided:\n- question_1: A\n- question_2: B/);
+  assert.doesNotMatch(result.content[0].text, /Unfinished draft/);
+});
+
+test("ask_question shares one RPC timeout across custom input and multi-select dialogs", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = fakeHarness();
+  harness.setMode("rpc");
+  harness.selections.push("Type a custom answer", "B");
+  harness.inputs.push("Typed answer");
+  const select = harness.ctx.ui.select;
+  const input = harness.ctx.ui.input;
+  let pendingSignal: AbortSignal | undefined;
+  harness.ctx.ui.select = async (...args) => {
+    if (!harness.selections.length) {
+      pendingSignal = args[2]?.signal;
+      return pendingDialog(...args);
+    }
+    t.mock.timers.tick(120_000);
+    return select(...args);
+  };
+  harness.ctx.ui.input = async (...args) => {
+    t.mock.timers.tick(50_000);
+    return input(...args);
+  };
+  const execution = harness.tools.get("ask_question").execute("rpc-partial", {
+    questions: [{ question: "First?" }, { question: "Second?", options: ["B", "C"], multiSelect: true }],
+  }, new AbortController().signal, undefined, harness.ctx);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.ok(pendingSignal);
+  t.mock.timers.tick(9_999);
+  assert.equal(pendingSignal.aborted, false);
+  t.mock.timers.tick(1);
+  assert.equal(pendingSignal.aborted, true);
+  const result = await execution;
+
+  assert.equal(result.details.timedOut, true);
+  assert.equal(result.details.cancelled, false);
+  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Typed answer", "B"]);
+  assert.equal(getEventListeners(pendingSignal, "abort").length, 0);
+});
+
+test("ask_question times out RPC custom input and lets caller cancellation take precedence", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const cancel of [false, true]) {
+    const harness = fakeHarness();
+    harness.setMode("rpc");
+    harness.selections.push("Type a custom answer");
+    let pendingSignal: AbortSignal | undefined;
+    harness.ctx.ui.input = async (...args) => {
+      pendingSignal = args[2]?.signal;
+      return pendingDialog(...args);
+    };
+    const controller = new AbortController();
+    const execution = harness.tools.get("ask_question").execute("rpc-input", { question: "Details?" }, controller.signal, undefined, harness.ctx);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(300_000);
+    assert.equal(pendingSignal?.aborted, true);
+    if (cancel) controller.abort();
+    const result = await execution;
+
+    assert.equal(result.details.timedOut, !cancel);
+    assert.equal(result.details.cancelled, cancel);
+    assert.deepEqual(result.details.answers, []);
+    if (cancel) assert.equal(result.content[0].text, "User cancelled the question.");
+    else assert.match(result.content[0].text, /Mitch is currently AFK/);
+  }
+});
+
+test("ask_question clears its timer after an answer, cancellation, or UI error", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const clearTimer = t.mock.method(globalThis, "clearTimeout");
+  for (const key of ["\r", "\u001b"]) {
+    const harness = fakeHarness();
+    const execution = harness.tools.get("ask_question").execute("early", { question: "Choose?", options: ["A"] }, undefined, undefined, harness.ctx);
+    harness.getCustomComponent().handleInput(key);
+    const result = await execution;
+    assert.equal(result.details.timedOut, false);
+    assert.equal(result.details.cancelled, key === "\u001b");
+    t.mock.timers.tick(300_000);
+    assert.equal(harness.getCustomDoneCalls(), 1);
+  }
+  const harness = fakeHarness();
+  harness.ctx.ui.custom = async () => { throw new Error("UI failed"); };
+  await assert.rejects(harness.tools.get("ask_question").execute("error", { question: "Choose?" }, undefined, undefined, harness.ctx), /UI failed/);
+  assert.equal(clearTimer.mock.callCount(), 3);
 });
 
 test("ask_question prompt guidelines identify the tool", () => {

@@ -27,6 +27,7 @@ type AskQuestionDetails = {
   questions: NormalizedQuestion[];
   answers: Answer[];
   cancelled: boolean;
+  timedOut: boolean;
 };
 
 type GrillMeState = {
@@ -35,6 +36,8 @@ type GrillMeState = {
 
 type GrillMeAction = "toggle" | "enable" | "disable" | "status" | "invalid";
 
+const QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
+const TIMEOUT_MESSAGE = "Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.";
 const CUSTOM_OPTION = "Type a custom answer";
 const DONE_OPTION = "Done selecting";
 const GRILL_ME_STATE_TYPE = "ask-question.grill-me";
@@ -124,7 +127,11 @@ function orderedAnswers(questions: NormalizedQuestion[], answers: Map<string, An
   return questions.map((question) => answers.get(question.id)).filter((answer): answer is Answer => Boolean(answer));
 }
 
-function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>, cancelled: boolean): string {
+function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>, cancelled: boolean, timedOut: boolean): string {
+  if (timedOut) return [
+    `Timed out after 5 minutes. ${TIMEOUT_MESSAGE}`,
+    ...(answers.size ? ["", "Answers already provided:", ...orderedAnswers(questions, answers).map((answer) => `- ${answer.id}: ${answer.answer}`)] : []),
+  ].join("\n");
   if (cancelled) return "User cancelled the question.";
   if (questions.length === 1) return `User answered: ${answers.get(questions[0].id)?.answer ?? "unanswered"}`;
   return [
@@ -404,6 +411,7 @@ async function askWithKeyboard(
       }
 
       add();
+      addWrapped("Auto-continues after 5 minutes with an AFK reply.", { style: (text) => theme.fg("dim", text) });
       addWrapped(
         editing
           ? `${keyText("tui.input.submit")} save answer • ${keyText("tui.select.cancel")} cancel edit`
@@ -439,10 +447,10 @@ async function askWithDialogs(
   ui: ExtensionContext["ui"],
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
-  const answers: Answer[] = [];
+  const answers = new Map<string, Answer>();
 
   for (const question of questions) {
-    if (signal?.aborted) return { answers, cancelled: true };
+    if (signal?.aborted) return { answers: orderedAnswers(questions, answers), cancelled: true };
     const selected: string[] = [];
     const customOption = uniqueOptionLabel(CUSTOM_OPTION, question.options);
     const doneOption = uniqueOptionLabel(DONE_OPTION, question.options);
@@ -451,38 +459,32 @@ async function askWithDialogs(
       const choices = [...question.options.filter((option) => !selected.includes(option)), customOption];
       if (question.multiSelect && selected.length) choices.push(doneOption);
       const choice = await ui.select(question.question, choices, { signal });
-      if (choice === undefined) return { answers, cancelled: true };
+      if (choice === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
       if (choice === doneOption) break;
 
       let answer = choice;
       let wasCustom = false;
       if (choice === customOption) {
         const input = await ui.input(question.question, "Type your answer", { signal });
-        if (input === undefined) return { answers, cancelled: true };
+        if (input === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
         const custom = clean(input);
         if (!custom) continue;
         answer = custom;
         wasCustom = true;
       }
 
-      if (!question.multiSelect) {
-        answers.push({ id: question.id, question: question.question, answer, wasCustom });
-        break;
-      }
       if (!selected.includes(answer)) selected.push(answer);
-    }
-
-    if (question.multiSelect) {
-      answers.push({
+      answers.set(question.id, {
         id: question.id,
         question: question.question,
-        answer: selected.join(", "),
-        wasCustom: selected.some((answer) => !question.options.includes(answer)),
+        answer: question.multiSelect ? selected.join(", ") : answer,
+        wasCustom: question.multiSelect ? selected.some((answer) => !question.options.includes(answer)) : wasCustom,
       });
+      if (!question.multiSelect) break;
     }
   }
 
-  return { answers, cancelled: false };
+  return { answers: orderedAnswers(questions, answers), cancelled: false };
 }
 
 function parseGrillMeAction(args: string): GrillMeAction {
@@ -524,7 +526,7 @@ function restoreGrillMeState(entries: Iterable<unknown>): boolean {
 const askQuestionTool = defineTool({
   name: "ask_question",
   label: "Ask Question",
-  description: "Ask the user one or more clarifying questions through pi's UI. Works for any model.",
+  description: "Ask the user one or more clarifying questions through pi's UI. After 5 minutes, returns an AFK reply so you can continue using your best judgement.",
   promptSnippet: "Ask the user clarifying questions through pi's UI",
   promptGuidelines: [
     "For ask_question, list options from most recommended to least; the first option is the recommended choice, and do not label it as recommended.",
@@ -539,15 +541,24 @@ const askQuestionTool = defineTool({
     if (!questions.length) throw new Error("ask_question needs either question or questions[].");
     if (!ctx.hasUI) throw new Error("ask_question needs Pi TUI or RPC UI support.");
 
-    const result = ctx.mode === "tui"
-      ? await askWithKeyboard(questions, ctx.ui, signal)
-      : await askWithDialogs(questions, ctx.ui, signal);
-    const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), QUESTION_TIMEOUT_MS);
+    const questionSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
+    try {
+      const result = ctx.mode === "tui"
+        ? await askWithKeyboard(questions, ctx.ui, questionSignal)
+        : await askWithDialogs(questions, ctx.ui, questionSignal);
+      const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
+      const timedOut = result.cancelled && timeout.signal.aborted && !signal?.aborted;
+      const cancelled = result.cancelled && !timedOut;
 
-    return {
-      content: [{ type: "text", text: summarize(questions, answers, result.cancelled) }],
-      details: { questions, answers: result.answers, cancelled: result.cancelled } satisfies AskQuestionDetails,
-    };
+      return {
+        content: [{ type: "text", text: summarize(questions, answers, cancelled, timedOut) }],
+        details: { questions, answers: result.answers, cancelled, timedOut } satisfies AskQuestionDetails,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   },
 
   renderCall(args, theme, _context) {
@@ -565,6 +576,10 @@ const askQuestionTool = defineTool({
     if (!details) {
       const content = result.content[0];
       return new Text(content?.type === "text" ? content.text : "", 0, 0);
+    }
+    if (details.timedOut) {
+      const content = result.content[0];
+      return new Text(theme.fg("warning", content?.type === "text" ? content.text : TIMEOUT_MESSAGE), 0, 0);
     }
     if (details.cancelled) return new Text(theme.fg("warning", "Cancelled"), 0, 0);
     const lines = details.questions.map((question) => {
