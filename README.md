@@ -9,6 +9,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 - Supports ordered choices, multi-select, and typed custom answers
 - Adds the custom-answer option automatically
 - Returns answers in tool result text and structured `details`
+- Stops waiting after five minutes and lets the agent continue with an AFK reply
 - Adds `/grill-me` to toggle pressure-test mode
 
 ## Requirements
@@ -90,6 +91,10 @@ Ask several questions:
 - Options should be ordered from most recommended to least recommended.
 - Do not include a custom-answer option; the UI adds one.
 - `ask_question` uses its full keyboard UI in TUI mode and sequential Pi dialogs in RPC mode.
+- Each `ask_question` call has one five-minute limit, shared across all questions and dialogs. Answering part of a question set does not restart the timer.
+- At timeout, the tool returns: “Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.” It reports `timedOut: true`, not cancellation, and does not select an option or invent a user answer.
+- Saved answers and multi-select choices are preserved on timeout; unfinished custom-answer text is not submitted.
+- The timeout closes the TUI question and stops server-side waiting in RPC mode. RPC clients are responsible for dismissing their own dialogs; Pi does not send a dismissal event.
 - Blank RPC custom answers return to option selection, matching TUI behavior; dismissing the input cancels.
 - Print and JSON modes return a tool error because they cannot collect user input.
 - `/grill-me` state is saved in the current session branch and survives `/reload`.

@@ -1,6 +1,6 @@
 {
   "name": "pi-ask-question",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Pi extension that adds an interactive ask_question tool and /grill-me pressure-test mode",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
