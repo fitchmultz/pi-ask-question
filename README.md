@@ -104,7 +104,7 @@ npm install
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-The development Pi cohort is pinned to official `0.86.1`; the declared `0.84.0` floor is a separate target. Runtime host peers remain wildcard, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
+The development Pi cohort is pinned to official `0.87.0`; the declared `0.84.0` floor is a separate target. Runtime host peers remain wildcard, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
 
 `tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, and caller-abort paths plus editor draft preservation and restored keyboard ownership. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
 
