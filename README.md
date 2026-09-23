@@ -87,6 +87,9 @@ Ask several questions:
 - Options should be ordered from most recommended to least recommended.
 - Do not include a custom-answer option; the UI adds one.
 - `ask_question` uses its full keyboard UI in TUI mode and sequential Pi dialogs in RPC mode.
+- TUI questions appear over the current screen, temporarily covering the footer and widgets while preserving the editor draft. Long lists scroll by complete wrapped choices with Up/Down.
+- PageUp/PageDown let you read a question, choice, or answer review longer than the screen; Shift+PageUp/Shift+PageDown also work in fullscreen on older Pi. While typing a custom answer, the list shows only that choice; Escape returns to the list.
+- Saved answers have a one-line preview while choosing; the Review tab retains their full text.
 - Each `ask_question` call has one five-minute limit, shared across all questions and dialogs. Answering part of a question set does not restart the timer.
 - At timeout, the tool returns: “Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.” It reports `timedOut: true`, not cancellation, and does not select an option or invent a user answer.
 - Saved answers and multi-select choices are preserved on timeout; unfinished custom-answer text is not submitted.
@@ -106,7 +109,7 @@ npm run check:compat # all behavior tests + typecheck + pack dry-run
 
 The development Pi cohort is pinned to official `0.86.1`; the declared `0.84.0` floor is a separate target. Runtime host peers remain wildcard, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
 
-`tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, and caller-abort paths plus editor draft preservation and restored keyboard ownership. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
+`tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort, short-terminal choices and editing, paging, resize, fullscreen, and widget overlap, plus draft and keyboard ownership restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
 
 Key file:
 

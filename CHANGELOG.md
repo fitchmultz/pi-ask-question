@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep selected choices visible in short terminals and after resizing, with scrolling for long questions, choices, and answer reviews.
+
 ## 0.4.0 — 2026-09-07
 
 - Stop waiting after five minutes per `ask_question` call and return an AFK reply so the agent can continue using its best judgement.
