@@ -435,11 +435,7 @@ async function askWithKeyboard(
         const prefixStyle = options.prefixStyle ?? ((value: string) => value);
         const wrap = options.preserveWhitespace ? wrapByColumn : wrapTextWithAnsi;
         const prefixWidth = visibleWidth(firstPrefix);
-        if (options.preserveWhitespace && width - prefixWidth < 2) {
-          for (const line of wrapByColumn(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
-          return;
-        }
-        if (prefixWidth >= width) {
+        if (prefixWidth >= width || (options.preserveWhitespace && width - prefixWidth < 2)) {
           for (const line of wrap(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
           return;
         }
