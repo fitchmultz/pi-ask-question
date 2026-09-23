@@ -828,7 +828,13 @@ function registerGrillMe(pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
     if (!grillMeMode) return undefined;
     const useTool = ctx.hasUI && pi.getActiveTools().includes("ask_question");
-    return { systemPrompt: `${event.systemPrompt}\n\n${grillMePrompt(useTool)}` };
+    const guidance = grillMePrompt(useTool);
+    if (event.systemPromptOptions.sections && event.systemPromptOptions.forceSystemPrompt === undefined) {
+      event.systemPromptOptions.sections.grill_me = guidance;
+      return;
+    }
+    // Pi 0.84 has no prompt sections; preserve earlier full-prompt overrides.
+    return { systemPrompt: `${event.systemPrompt}\n\n${guidance}` };
   });
 }
 

@@ -50,7 +50,9 @@ const nextRender = () => new Promise<void>((resolve) => setTimeout(resolve, 30))
 test("native ask UI answers and cancels without consuming the main editor draft", { timeout: 20_000 }, async (t) => {
   const home = mkdtempSync(join(tmpdir(), "pi-ask-native-"));
   const agentDir = join(home, ".pi", "agent");
+  const otherCwd = join(home, "other-project");
   mkdirSync(agentDir, { recursive: true });
+  mkdirSync(otherCwd);
   const previous = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
   process.env.HOME = home;
   process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -60,6 +62,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
   try {
     const pi = await import("@earendil-works/pi-coding-agent");
     let commandContext: ExtensionCommandContext | undefined;
+    let promptAfterLaterExtension = "";
     const settingsManager = pi.SettingsManager.inMemory({ theme: "dark", quietStartup: true });
     const modelRuntime = await pi.ModelRuntime.create({
       authPath: join(agentDir, "auth.json"), modelsPath: null, allowModelNetwork: false,
@@ -70,9 +73,16 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         resourceLoaderOptions: {
           noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: [fileURLToPath(new URL("../extensions/ask-question.ts", import.meta.url))],
-          extensionFactories: [(api) => api.registerCommand("test-ui-context", {
-            handler: async (_args, ctx) => { commandContext = ctx; },
-          })],
+          extensionFactories: [(api) => {
+            api.registerCommand("test-ui-context", {
+              handler: async (_args, ctx) => { commandContext = ctx; },
+            });
+            api.on("before_agent_start", (event) => {
+              event.systemPromptOptions.cwd = otherCwd;
+              event.systemPromptOptions.sections.policy = "Confirm destructive actions.";
+              promptAfterLaterExtension = event.systemPrompt;
+            });
+          }],
         },
       });
       assert.deepEqual(services.resourceLoader.getExtensions().errors, []);
@@ -100,6 +110,18 @@ test("native ask UI answers and cancels without consuming the main editor draft"
     const viewport = () => (renderer().mode === "fullscreen" ? renderer().previousScreen : renderer().previousLines)?.slice(-terminal.rows) ?? [];
     const switchMode = (next: "regular" | "fullscreen") =>
       (mode as unknown as { switchTuiMode: (mode: "regular" | "fullscreen") => boolean }).switchTuiMode(next);
+
+    await t.test("grill-me preserves instructions added by a later extension", async () => {
+      try {
+        await runtime.session.prompt("/grill-me on");
+        await runtime.session.extensionRunner.emitBeforeAgentStart("test", undefined, { cwd: home, selectedTools: ["ask_question"] });
+        assert.ok(promptAfterLaterExtension.includes(`<cwd>\n${otherCwd}\n</cwd>`), "The model sees the updated working directory");
+        assert.match(promptAfterLaterExtension, /Confirm destructive actions\./);
+        assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
+      } finally {
+        await runtime.session.prompt("/grill-me off");
+      }
+    });
 
     for (const action of ["answer", "escape", "abort"] as const) {
       await t.test(action, async () => {
