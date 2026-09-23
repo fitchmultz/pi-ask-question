@@ -1,5 +1,5 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 
 type Question = {
@@ -166,7 +166,18 @@ async function askWithKeyboard(
     let option = 0;
     let editing = false;
     let cachedWidth: number | undefined;
+    let cachedHeight: number | undefined;
     let cachedLines: string[] | undefined;
+    let optionScroll = 0;
+    let labelScroll = 0;
+    let pageRows = 0;
+    let maxLabelScroll = 0;
+    let questionScroll = 0;
+    let questionPageRows = 0;
+    let maxQuestionScroll = 0;
+    let reviewScroll: number | undefined;
+    let reviewPageRows = 0;
+    let maxReviewScroll = 0;
 
     const submitTab = questions.length;
     const showTabs = questions.length > 1 || questions.some((question) => question.multiSelect);
@@ -191,6 +202,10 @@ async function askWithKeyboard(
     function moveTab(next: number) {
       tab = (next + questions.length + 1) % (questions.length + 1);
       option = 0;
+      optionScroll = 0;
+      labelScroll = 0;
+      questionScroll = 0;
+      reviewScroll = undefined;
       editing = false;
       editor.setText("");
       refresh();
@@ -224,6 +239,7 @@ async function askWithKeyboard(
       if (selected.has(choice)) selected.delete(choice);
       else selected.add(choice);
       syncMultiAnswer(question);
+      labelScroll = 0;
       refresh();
     }
 
@@ -233,6 +249,9 @@ async function askWithKeyboard(
         : answers.get(question.id)?.wasCustom ? answers.get(question.id)?.answer : undefined;
       editor.setText(currentCustom ?? "");
       editing = true;
+      labelScroll = 0;
+      optionScroll = 0;
+      questionScroll = 0;
       refresh();
     }
 
@@ -274,6 +293,16 @@ async function askWithKeyboard(
 
     function handleInput(data: string) {
       if (editing) {
+        if (maxQuestionScroll && matchesKey(data, Key.shift("pageUp"))) {
+          questionScroll = Math.max(0, questionScroll - Math.max(1, questionPageRows - 1));
+          refresh();
+          return;
+        }
+        if (maxQuestionScroll && matchesKey(data, Key.shift("pageDown"))) {
+          questionScroll = Math.min(maxQuestionScroll, questionScroll + Math.max(1, questionPageRows - 1));
+          refresh();
+          return;
+        }
         if (keys.matches(data, "tui.select.cancel")) {
           editing = false;
           editor.setText("");
@@ -288,21 +317,48 @@ async function askWithKeyboard(
       if (showTabs && (matchesKey(data, Key.right) || keys.matches(data, "tui.input.tab"))) return moveTab(tab + 1);
       if (showTabs && (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab")))) return moveTab(tab - 1);
       if (keys.matches(data, "tui.select.cancel")) return finish(true);
+      // Older fullscreen Pi reserves plain Page keys for transcript scrolling.
+      const pageUp = keys.matches(data, "tui.select.pageUp") || matchesKey(data, Key.shift("pageUp"));
+      const pageDown = keys.matches(data, "tui.select.pageDown") || matchesKey(data, Key.shift("pageDown"));
 
       if (tab === submitTab) {
+        if (maxReviewScroll && pageUp) {
+          reviewScroll = Math.max(0, (reviewScroll ?? maxReviewScroll) - Math.max(1, reviewPageRows - 1));
+          refresh();
+          return;
+        }
+        if (maxReviewScroll && pageDown) {
+          reviewScroll = Math.min(maxReviewScroll, (reviewScroll ?? maxReviewScroll) + Math.max(1, reviewPageRows - 1));
+          refresh();
+          return;
+        }
         if (keys.matches(data, "tui.select.confirm") && allAnswered()) finish(false);
         return;
       }
 
       const question = current();
       const options = choices();
+      if ((maxQuestionScroll || maxLabelScroll) && pageUp) {
+        if (labelScroll > 0) labelScroll = Math.max(0, labelScroll - Math.max(1, pageRows - 1));
+        else questionScroll = Math.max(0, questionScroll - Math.max(1, questionPageRows - 1));
+        refresh();
+        return;
+      }
+      if ((maxQuestionScroll || maxLabelScroll) && pageDown) {
+        if (questionScroll < maxQuestionScroll) questionScroll = Math.min(maxQuestionScroll, questionScroll + Math.max(1, questionPageRows - 1));
+        else labelScroll = Math.min(maxLabelScroll, labelScroll + Math.max(1, pageRows - 1));
+        refresh();
+        return;
+      }
       if (keys.matches(data, "tui.select.up")) {
         option = Math.max(0, option - 1);
+        labelScroll = 0;
         refresh();
         return;
       }
       if (keys.matches(data, "tui.select.down")) {
         option = Math.min(options.length - 1, option + 1);
+        labelScroll = 0;
         refresh();
         return;
       }
@@ -325,8 +381,21 @@ async function askWithKeyboard(
     }
 
     function render(width: number): string[] {
-      if (cachedLines && cachedWidth === width) return cachedLines;
+      const height = tui.terminal.rows;
+      if (cachedLines && cachedWidth === width && cachedHeight === height) return cachedLines;
+      if (cachedWidth !== width) {
+        optionScroll = 0;
+        labelScroll = 0;
+        questionScroll = 0;
+      }
       const lines: string[] = [];
+      let questionStart = 0;
+      let questionEnd = 0;
+      let optionStart = 0;
+      let optionEnd = 0;
+      let reviewStart = 0;
+      let reviewEnd = 0;
+      const optionRows: Array<{ start: number; end: number }> = [];
       const add = (line = "") => lines.push(visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line);
       const addWrapped = (
         text: string,
@@ -348,7 +417,7 @@ async function askWithKeyboard(
       const border = theme.fg("accent", "─".repeat(width));
 
       add(border);
-      if (showTabs) {
+      if (showTabs && !editing) {
         addWrapped(
           [
             ...questions.map((question, index) => {
@@ -365,6 +434,7 @@ async function askWithKeyboard(
       if (tab === submitTab) {
         addWrapped(theme.bold("Review answers"));
         add();
+        reviewStart = lines.length;
         for (const question of questions) {
           addWrapped(answers.get(question.id)?.answer ?? "unanswered", {
             firstPrefix: `${question.id}: `,
@@ -372,6 +442,7 @@ async function askWithKeyboard(
             style: answers.has(question.id) ? undefined : (text) => theme.fg("warning", text),
           });
         }
+        reviewEnd = lines.length;
         add();
         addWrapped(allAnswered() ? `${keyText("tui.select.confirm")} to submit` : "Answer all questions before submitting", {
           style: (text) => theme.fg(allAnswered() ? "success" : "warning", text),
@@ -381,10 +452,14 @@ async function askWithKeyboard(
         const options = choices();
         const answer = answers.get(question.id);
         const selected = question.multiSelect ? selectedSet(question) : undefined;
+        questionStart = lines.length;
         addWrapped(question.multiSelect ? `${question.question} (select one or more)` : question.question);
-        if (answer) addWrapped(`Current answer: ${answer.answer}`, { style: (text) => theme.fg("muted", text) });
+        questionEnd = lines.length;
         add();
+        optionStart = lines.length;
         options.forEach((choice, index) => {
+          if (editing && index !== option) return;
+          const start = lines.length - optionStart;
           const highlighted = index === option;
           const checked = selected?.has(choice) ?? false;
           const marker = question.multiSelect ? (choice === customOption() ? "✎" : checked ? "☑" : "☐") : `${index + 1}.`;
@@ -395,9 +470,16 @@ async function askWithKeyboard(
             style: (text) => theme.fg(highlighted ? "accent" : "text", text),
             prefixStyle: (text) => highlighted && text.includes(">") ? theme.fg("accent", text) : text,
           });
+          optionRows.push({ start, end: lines.length - optionStart });
         });
+        optionEnd = lines.length;
+        if (answer && !editing) {
+          const custom = question.multiSelect ? customAnswers.get(question.id) : undefined;
+          const summary = custom && selected?.has(custom) ? `${custom} (${selected.size} selected)` : answer.answer;
+          const preview = `Current answer: ${summary.replace(/\s+/g, " ")}`;
+          add(theme.fg("muted", truncateToWidth(preview, width, "…")));
+        }
         if (editing) {
-          add();
           addWrapped(theme.fg("muted", "Your answer:"));
           const indent = width > 1 ? " " : "";
           const editorWidth = Math.max(1, width - visibleWidth(indent));
@@ -410,7 +492,7 @@ async function askWithKeyboard(
         }
       }
 
-      add();
+      if (!editing) add();
       addWrapped("Auto-continues after 5 minutes with an AFK reply.", { style: (text) => theme.fg("dim", text) });
       addWrapped(
         editing
@@ -421,7 +503,74 @@ async function askWithKeyboard(
         { style: (text) => theme.fg("dim", text) },
       );
       add(border);
+
+      if (tab !== submitTab) {
+        const questionLines = lines.slice(questionStart, questionEnd);
+        const selectedRow = editing ? 0 : option;
+        const selectedHeight = optionRows[selectedRow].end - optionRows[selectedRow].start;
+        const room = Math.max(2, height - (lines.length - questionLines.length - (optionEnd - optionStart)));
+        const questionRows = Math.max(1, room - selectedHeight);
+        maxQuestionScroll = Math.max(0, questionLines.length - questionRows);
+        questionScroll = Math.min(questionScroll, maxQuestionScroll);
+        questionPageRows = questionRows;
+        if (maxQuestionScroll) {
+          lines.splice(questionStart, questionLines.length, ...questionLines.slice(questionScroll, questionScroll + questionRows));
+          const removed = questionLines.length - questionRows;
+          optionStart -= removed;
+          optionEnd -= removed;
+        }
+
+        const optionLines = lines.slice(optionStart, optionEnd);
+        const available = Math.max(1, height);
+        const visibleOptions = Math.max(1, available - (lines.length - optionLines.length));
+        let optionStatus = "";
+        if (optionLines.length > visibleOptions) {
+          // Scroll at choice boundaries so labels that fit are shown in full.
+          optionScroll = Math.min(optionScroll, selectedRow);
+          while (optionScroll < selectedRow && optionRows[selectedRow].end - optionRows[optionScroll].start > visibleOptions) optionScroll++;
+          let end = selectedRow + 1;
+          while (end < optionRows.length && optionRows[end].end - optionRows[optionScroll].start <= visibleOptions) end++;
+          while (optionScroll > 0 && optionRows[end - 1].end - optionRows[optionScroll - 1].start <= visibleOptions) optionScroll--;
+          maxLabelScroll = Math.max(0, optionRows[selectedRow].end - optionRows[selectedRow].start - visibleOptions);
+          labelScroll = Math.min(labelScroll, maxLabelScroll);
+          pageRows = visibleOptions;
+          const startLine = optionRows[optionScroll].start + labelScroll;
+          const endLine = Math.min(optionRows[end - 1].end, startLine + visibleOptions);
+          const above = optionScroll > 0 || labelScroll > 0 ? "↑ " : "";
+          const below = endLine < optionLines.length ? " ↓" : "";
+          optionStatus = `${above}${option + 1}/${choices().length}${below}`;
+          lines.splice(optionStart, optionLines.length, ...optionLines.slice(startLine, endLine));
+        } else {
+          optionScroll = 0;
+          labelScroll = 0;
+          maxLabelScroll = 0;
+        }
+        if (maxQuestionScroll || optionStatus) {
+          const questionStatus = maxQuestionScroll ? `Q ${questionScroll + 1}-${Math.min(questionScroll + questionRows, questionLines.length)}/${questionLines.length}` : "";
+          const read = !editing && (maxQuestionScroll || maxLabelScroll) ? ` • ${keyText("tui.select.pageUp")}/${keyText("tui.select.pageDown")} read (Shift+Page fullscreen)` : "";
+          const status = editing && maxQuestionScroll
+            ? `Shift+PageUp/Down question • ${questionStatus}`
+            : `${[questionStatus, optionStatus].filter(Boolean).join(" • ")}${read}`;
+          lines[optionStart - 1] = sliceByColumn(theme.fg("dim", ` ${status}`), 0, width, true);
+        }
+      } else {
+        const answerLines = lines.slice(reviewStart, reviewEnd);
+        const visibleAnswers = Math.max(1, height - (lines.length - answerLines.length));
+        const wasAtEnd = reviewScroll === undefined || reviewScroll === maxReviewScroll;
+        maxReviewScroll = Math.max(0, answerLines.length - visibleAnswers);
+        reviewScroll = wasAtEnd ? maxReviewScroll : Math.min(reviewScroll ?? 0, maxReviewScroll);
+        reviewPageRows = visibleAnswers;
+        if (maxReviewScroll) {
+          const above = reviewScroll > 0 ? "↑ " : "";
+          const below = reviewScroll < maxReviewScroll ? " ↓" : "";
+          const read = `${keyText("tui.select.pageUp")}/${keyText("tui.select.pageDown")} read answers (Shift+Page fullscreen)`;
+          lines[reviewStart - 1] = sliceByColumn(theme.fg("dim", ` ${above}${read}${below}`), 0, width, true);
+          lines.splice(reviewStart, answerLines.length, ...answerLines.slice(reviewScroll, reviewScroll + visibleAnswers));
+        }
+      }
+
       cachedWidth = width;
+      cachedHeight = height;
       cachedLines = lines;
       return lines;
     }
@@ -439,7 +588,7 @@ async function askWithKeyboard(
       invalidate: () => { cachedLines = undefined; },
       dispose: () => signal?.removeEventListener("abort", abort),
     };
-  });
+  }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" } });
 }
 
 async function askWithDialogs(

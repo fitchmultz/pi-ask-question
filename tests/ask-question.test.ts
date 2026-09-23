@@ -23,6 +23,7 @@ function fakeHarness() {
     bg: (_color: string, text: string) => text,
     bold: (text: string) => text,
   };
+  const terminal = { rows: 24, columns: 80 };
 
   const ctx = {
     mode: "tui",
@@ -40,7 +41,7 @@ function fakeHarness() {
         return inputs.shift();
       },
       custom: (factory: any) => new Promise((resolve) => {
-        customComponent = factory({ requestRender() {}, terminal: { rows: 24, columns: 80 } }, theme, getKeybindings(), (value: unknown) => {
+        customComponent = factory({ requestRender() {}, terminal }, theme, getKeybindings(), (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });
@@ -66,6 +67,7 @@ function fakeHarness() {
     entries,
     ctx,
     theme,
+    terminal,
     statuses,
     notifications,
     selections,
@@ -241,6 +243,70 @@ test("ask_question keeps wide options and answered review within narrow widths",
   for (const width of [3, 2, 1]) assertFits(width);
   component.handleInput("\u001b");
   await execution;
+});
+
+test("ask_question keeps the question and selected wrapped option visible on short and resized terminals", async () => {
+  const harness = fakeHarness();
+  const options = Array.from({ length: 30 }, (_, index) => `Choice ${index + 1}`);
+  options[15] = "A detailed choice with enough explanation to wrap across multiple rows while keeping its final words visible: tail marker";
+  const controller = new AbortController();
+  const execution = harness.tools.get("ask_question").execute(
+    "long-list", { question: "Which choice should I use?", options }, controller.signal, undefined, harness.ctx,
+  );
+  const component = harness.getCustomComponent();
+  const visible = () => component.render(80).slice(-harness.terminal.rows);
+  const assertSelection = (label: string) => {
+    const rendered = component.render(80);
+    assert.ok(rendered.length <= harness.terminal.rows, `Question UI uses ${rendered.length} of ${harness.terminal.rows} available rows`);
+    const screen = visible().join("\n");
+    assert.match(screen, /Which choice should I use\?/);
+    assert.ok(screen.includes(label), `${label} must remain in the native viewport`);
+  };
+
+  try {
+    assertSelection("> 1. Choice 1");
+    for (let index = 0; index < 16; index += 1) component.handleInput("\u001b[B");
+    assertSelection("> 17. Choice 17");
+    component.handleInput("\u001b[A");
+    assertSelection("> 16. A detailed choice");
+    assert.match(visible().join("\n"), /tail marker/, "The whole selected wrapped label remains readable");
+
+    harness.terminal.rows = 15;
+    assertSelection("> 16. A detailed choice");
+    assert.match(visible().join("\n"), /tail marker/);
+    harness.terminal.rows = 24;
+    assertSelection("> 16. A detailed choice");
+
+    for (let index = 0; index < 14; index += 1) component.handleInput("\u001b[B");
+    assertSelection("> 30. Choice 30");
+    component.handleInput("\r");
+    assert.equal((await execution).details.answers[0]?.answer, "Choice 30");
+  } finally {
+    controller.abort();
+    await execution;
+  }
+});
+
+test("ask_question previews only selected answers after deselecting a matching custom value", async () => {
+  const harness = fakeHarness();
+  const controller = new AbortController();
+  const execution = harness.tools.get("ask_question").execute(
+    "preview", { question: "Choose?", options: ["A", "B"], multiSelect: true }, controller.signal, undefined, harness.ctx,
+  );
+  const component = harness.getCustomComponent();
+  try {
+    // Enter custom A, select B, then deselect the predefined A.
+    for (const key of ["\u001b[B", "\u001b[B", "\r", "A", "\r", "\u001b[A", " ", "\u001b[A", " "]) {
+      component.handleInput(key);
+    }
+    assert.ok(component.render(80).includes("Current answer: B"));
+    component.handleInput("\u001b[C");
+    component.handleInput("\r");
+    assert.equal((await execution).details.answers[0]?.answer, "B");
+  } finally {
+    controller.abort();
+    await execution;
+  }
 });
 
 test("ask_question shows and honors configured editor bindings", async () => {
