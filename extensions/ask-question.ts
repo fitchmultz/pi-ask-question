@@ -636,13 +636,17 @@ async function askWithDialogs(
     const doneOption = uniqueOptionLabel(DONE_OPTION, question.options);
 
     while (true) {
-      const choices = [...question.options.filter((option) => !selected.includes(option)), customOption];
+      const options = [...question.options, ...selected.filter((answer) => !question.options.includes(answer))];
+      const labels = question.multiSelect
+        ? options.map((answer) => `${selected.includes(answer) ? "☑" : "☐"} ${answer}`)
+        : options;
+      const choices = [...labels, customOption];
       if (question.multiSelect && selected.length) choices.push(doneOption);
       const choice = await ui.select(question.question, choices, { signal });
       if (choice === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
       if (choice === doneOption) break;
 
-      let answer = choice;
+      let answer = options[labels.indexOf(choice)] ?? choice;
       let wasCustom = false;
       if (choice === customOption) {
         const input = await ui.input(question.question, "Type your answer", { signal });
@@ -653,8 +657,11 @@ async function askWithDialogs(
         wasCustom = true;
       }
 
-      if (!selected.includes(answer)) selected.push(answer);
-      answers.set(question.id, {
+      const index = selected.indexOf(answer);
+      if (question.multiSelect && !wasCustom && index !== -1) selected.splice(index, 1);
+      else if (index === -1) selected.push(answer);
+      if (!selected.length) answers.delete(question.id);
+      else answers.set(question.id, {
         id: question.id,
         question: question.question,
         answer: question.multiSelect ? selected.join(", ") : answer,
