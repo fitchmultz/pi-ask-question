@@ -20,6 +20,7 @@ type Answer = {
   id: string;
   question: string;
   answer: string;
+  selectedOptions?: string[];
   wasCustom: boolean;
 };
 
@@ -127,16 +128,42 @@ function orderedAnswers(questions: NormalizedQuestion[], answers: Map<string, An
   return questions.map((question) => answers.get(question.id)).filter((answer): answer is Answer => Boolean(answer));
 }
 
+function formatAnswer(answer?: Answer): string {
+  if (!answer) return "unanswered";
+  return answer.selectedOptions ? JSON.stringify(answer.selectedOptions) : answer.answer;
+}
+
+// Word wrapping drops spaces at line breaks; JSON answer text must keep them.
+function wrapByColumn(text: string, width: number): string[] {
+  const lines: string[] = [];
+  while (visibleWidth(text) > width) {
+    const part = sliceByColumn(text, 0, width, true) || sliceByColumn(text, 0, width);
+    lines.push(part);
+    text = text.slice(part.length);
+  }
+  return [...lines, text];
+}
+
+function exactText(text: string) {
+  return {
+    render(width: number) {
+      const wrapped = text.split("\n").flatMap((line) => wrapByColumn(line, width)).join("\n");
+      return new Text(wrapped, 0, 0).render(width);
+    },
+    invalidate() {},
+  };
+}
+
 function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>, cancelled: boolean, timedOut: boolean): string {
   if (timedOut) return [
     `Timed out after 5 minutes. ${TIMEOUT_MESSAGE}`,
-    ...(answers.size ? ["", "Answers already provided:", ...orderedAnswers(questions, answers).map((answer) => `- ${answer.id}: ${answer.answer}`)] : []),
+    ...(answers.size ? ["", "Answers already provided:", ...orderedAnswers(questions, answers).map((answer) => `- ${answer.id}: ${formatAnswer(answer)}`)] : []),
   ].join("\n");
   if (cancelled) return "User cancelled the question.";
-  if (questions.length === 1) return `User answered: ${answers.get(questions[0].id)?.answer ?? "unanswered"}`;
+  if (questions.length === 1) return `User answered: ${formatAnswer(answers.get(questions[0].id))}`;
   return [
     "User answered:",
-    ...questions.map((question) => `- ${question.id}: ${answers.get(question.id)?.answer ?? "unanswered"}`),
+    ...questions.map((question) => `- ${question.id}: ${formatAnswer(answers.get(question.id))}`),
   ].join("\n");
 }
 
@@ -230,6 +257,7 @@ async function askWithKeyboard(
         id: question.id,
         question: question.question,
         answer: selected.join(", "),
+        selectedOptions: selected,
         wasCustom: selected.some((answer) => !question.options.includes(answer)),
       });
     }
@@ -399,18 +427,19 @@ async function askWithKeyboard(
       const add = (line = "") => lines.push(visibleWidth(line) > width ? sliceByColumn(line, 0, width, true) : line);
       const addWrapped = (
         text: string,
-        options: { firstPrefix?: string; restPrefix?: string; style?: (text: string) => string; prefixStyle?: (text: string) => string } = {},
+        options: { firstPrefix?: string; restPrefix?: string; style?: (text: string) => string; prefixStyle?: (text: string) => string; preserveWhitespace?: boolean } = {},
       ) => {
         const firstPrefix = options.firstPrefix ?? "";
         const restPrefix = options.restPrefix ?? "";
         const style = options.style ?? ((value: string) => value);
         const prefixStyle = options.prefixStyle ?? ((value: string) => value);
+        const wrap = options.preserveWhitespace ? wrapByColumn : wrapTextWithAnsi;
         const prefixWidth = visibleWidth(firstPrefix);
-        if (prefixWidth >= width) {
-          for (const line of wrapTextWithAnsi(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
+        if (prefixWidth >= width || (options.preserveWhitespace && width - prefixWidth < 2)) {
+          for (const line of wrap(`${prefixStyle(firstPrefix)}${style(text)}`, width)) add(line);
           return;
         }
-        const wrapped = wrapTextWithAnsi(style(text), width - prefixWidth);
+        const wrapped = wrap(style(text), width - prefixWidth);
         add(`${prefixStyle(firstPrefix)}${wrapped[0] ?? ""}`);
         for (let index = 1; index < wrapped.length; index += 1) add(`${prefixStyle(restPrefix)}${wrapped[index]}`);
       };
@@ -436,10 +465,12 @@ async function askWithKeyboard(
         add();
         reviewStart = lines.length;
         for (const question of questions) {
-          addWrapped(answers.get(question.id)?.answer ?? "unanswered", {
+          const answer = answers.get(question.id);
+          addWrapped(formatAnswer(answer), {
             firstPrefix: `${question.id}: `,
             restPrefix: " ".repeat(visibleWidth(`${question.id}: `)),
-            style: answers.has(question.id) ? undefined : (text) => theme.fg("warning", text),
+            style: answer ? undefined : (text) => theme.fg("warning", text),
+            preserveWhitespace: Boolean(answer?.selectedOptions),
           });
         }
         reviewEnd = lines.length;
@@ -627,6 +658,7 @@ async function askWithDialogs(
         id: question.id,
         question: question.question,
         answer: question.multiSelect ? selected.join(", ") : answer,
+        ...(question.multiSelect ? { selectedOptions: [...selected] } : {}),
         wasCustom: question.multiSelect ? selected.some((answer) => !question.options.includes(answer)) : wasCustom,
       });
       if (!question.multiSelect) break;
@@ -728,14 +760,16 @@ const askQuestionTool = defineTool({
     }
     if (details.timedOut) {
       const content = result.content[0];
-      return new Text(theme.fg("warning", content?.type === "text" ? content.text : TIMEOUT_MESSAGE), 0, 0);
+      const text = theme.fg("warning", content?.type === "text" ? content.text : TIMEOUT_MESSAGE);
+      return details.answers.some((answer) => answer.selectedOptions) ? exactText(text) : new Text(text, 0, 0);
     }
     if (details.cancelled) return new Text(theme.fg("warning", "Cancelled"), 0, 0);
     const lines = details.questions.map((question) => {
       const answer = details.answers.find((entry) => entry.id === question.id);
-      return `${theme.fg("success", "✓ ")}${theme.fg("accent", question.id)}: ${answer?.answer ?? "unanswered"}`;
+      return `${theme.fg("success", "✓ ")}${theme.fg("accent", question.id)}: ${formatAnswer(answer)}`;
     });
-    return new Text(lines.join("\n"), 0, 0);
+    const text = lines.join("\n");
+    return details.answers.some((answer) => answer.selectedOptions) ? exactText(text) : new Text(text, 0, 0);
   },
 });
 

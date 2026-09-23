@@ -133,6 +133,117 @@ test("ask_question uses sequential RPC dialogs and supports custom and multi-sel
   assert.equal(result.details.cancelled, false);
 });
 
+test("ask_question preserves comma-containing multi-select choices in TUI and RPC results", async () => {
+  const options = ["A", "B, C", "A, B", "C"];
+  const params = { question: "Which parts?", options, multiSelect: true };
+
+  async function choose(mode: "tui" | "rpc", indices: number[]) {
+    const harness = fakeHarness();
+    harness.setMode(mode);
+    const selectedOptions = indices.map((index) => options[index]);
+    if (mode === "rpc") harness.selections.push(...selectedOptions, "Done selecting");
+    const controller = new AbortController();
+    const execution = harness.tools.get("ask_question").execute("commas", params, controller.signal, undefined, harness.ctx);
+    try {
+      if (mode === "tui") {
+        const component = harness.getCustomComponent();
+        let cursor = 0;
+        for (const index of indices) {
+          while (cursor < index) {
+            component.handleInput("\u001b[B");
+            cursor += 1;
+          }
+          component.handleInput(" ");
+        }
+        component.handleInput("\r");
+        assert.ok(component.render(80).join("\n").includes(JSON.stringify(selectedOptions)));
+        component.handleInput("\r");
+      }
+      return await execution;
+    } finally {
+      controller.abort();
+    }
+  }
+
+  for (const mode of ["tui", "rpc"] as const) {
+    const first = await choose(mode, [0, 1]);
+    const second = await choose(mode, [2, 3]);
+    assert.deepEqual(first.details.answers[0].selectedOptions, ["A", "B, C"]);
+    assert.deepEqual(second.details.answers[0].selectedOptions, ["A, B", "C"]);
+    assert.equal(first.content[0].text, 'User answered: ["A","B, C"]');
+    assert.equal(second.content[0].text, 'User answered: ["A, B","C"]');
+  }
+});
+
+test("TUI review preserves spaces inside wrapped multi-select choices", async () => {
+  for (const choice of ["B, C", "B,C"]) {
+    const harness = fakeHarness();
+    const controller = new AbortController();
+    const execution = harness.tools.get("ask_question").execute(
+      "review", { question: "Which parts?", options: ["A", "B, C", "B,C"], multiSelect: true },
+      controller.signal, undefined, harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    component.handleInput(" ");
+    component.handleInput("\u001b[B");
+    if (choice === "B,C") component.handleInput("\u001b[B");
+    component.handleInput(" ");
+    component.handleInput("\r");
+
+    try {
+      const prefix = "question_1: ";
+      const lines = component.render(20);
+      const start = lines.findIndex((line: string) => line.startsWith(prefix));
+      assert.ok(start >= 0);
+      assert.equal(lines.slice(start, start + 2).map((line: string) => line.slice(prefix.length)).join(""), JSON.stringify(["A", choice]));
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  }
+});
+
+test("TUI review keeps wide choices visible when the answer indent leaves one column", async () => {
+  for (const [id, width] of [["question_1", 13], ["abcdefghijklmnopq", 20]] as const) {
+    const harness = fakeHarness();
+    const controller = new AbortController();
+    const execution = harness.tools.get("ask_question").execute(
+      "wide-review", { questions: [{ id, question: "Which?", options: ["漢"], multiSelect: true }] },
+      controller.signal, undefined, harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    component.handleInput(" ");
+    component.handleInput("\r");
+    try {
+      const lines = component.render(width);
+      assert.ok(lines.some((line: string) => line.includes("漢")));
+      assert.ok(lines.every((line: string) => visibleWidth(line) <= width));
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  }
+});
+
+test("TUI tool result distinguishes choices whose spaces fall on a wrap", async () => {
+  const withSpace = "XXXXXXXXXXXXX, C";
+  const withoutSpace = "XXXXXXXXXXXXX,C";
+
+  async function rendered(choice: string) {
+    const harness = fakeHarness();
+    harness.setMode("rpc");
+    harness.selections.push("A", choice, "Done selecting");
+    const tool = harness.tools.get("ask_question");
+    const result = await tool.execute(
+      "result", { question: "Which?", options: ["A", withSpace, withoutSpace], multiSelect: true },
+      undefined, undefined, harness.ctx,
+    );
+    return tool.renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx).render(20);
+  }
+
+  assert.notDeepEqual(await rendered(withSpace), await rendered(withoutSpace));
+});
+
 test("ask_question retries RPC option selection after blank custom input", async () => {
   const harness = fakeHarness();
   const tool = harness.tools.get("ask_question");
@@ -427,7 +538,7 @@ test("ask_question preserves saved TUI answers and multi-select choices but not 
 
   assert.equal(result.details.timedOut, true);
   assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["A", "B"]);
-  assert.match(result.content[0].text, /Answers already provided:\n- question_1: A\n- question_2: B/);
+  assert.match(result.content[0].text, /Answers already provided:\n- question_1: A\n- question_2: \["B"\]/);
   assert.doesNotMatch(result.content[0].text, /Unfinished draft/);
 });
 
