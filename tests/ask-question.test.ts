@@ -83,6 +83,11 @@ function fakeHarness() {
   };
 }
 
+function promptEvent() {
+  const systemPromptOptions: { sections: Record<string, string>; forceSystemPrompt?: string } = { sections: {} };
+  return { systemPrompt: "base", systemPromptOptions };
+}
+
 test("registers ask_question tool and grill-me command", () => {
   const harness = fakeHarness();
   assert.ok(harness.tools.has("ask_question"));
@@ -787,13 +792,14 @@ test("grill-me toggles, persists, and updates footer status", async () => {
   assert.deepEqual(harness.entries.at(-1), { type: "custom", customType: "ask-question.grill-me", data: { enabled: true } });
   assert.deepEqual(harness.statuses.at(-1), { key: "ask-question.grill-me", text: "grill-mode" });
 
-  const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
-  assert.match(result.systemPrompt, /base/);
-  assert.match(result.systemPrompt, /call ask_question first/);
-  assert.match(result.systemPrompt, /Walk the decision tree/);
-  assert.match(result.systemPrompt, /reading local files, docs, tests, or command output/);
-  assert.match(result.systemPrompt, /Ask exactly one blocking question at a time/);
-  assert.match(result.systemPrompt, /recommended answer as the first option/);
+  const event = promptEvent();
+  assert.equal(await harness.handlers.get("before_agent_start")(event, harness.ctx), undefined);
+  const guidance = event.systemPromptOptions.sections.grill_me;
+  assert.match(guidance, /call ask_question first/);
+  assert.match(guidance, /Walk the decision tree/);
+  assert.match(guidance, /reading local files, docs, tests, or command output/);
+  assert.match(guidance, /Ask exactly one blocking question at a time/);
+  assert.match(guidance, /recommended answer as the first option/);
 
   await command.handler("off", harness.ctx);
   assert.deepEqual(harness.entries.at(-1), { type: "custom", customType: "ask-question.grill-me", data: { enabled: false } });
@@ -811,8 +817,9 @@ test("grill-me restores last valid branch state after reload", async () => {
   await harness.handlers.get("session_start")({}, harness.ctx);
   assert.deepEqual(harness.statuses.at(-1), { key: "ask-question.grill-me", text: "grill-mode" });
 
-  const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
-  assert.match(result.systemPrompt, /call ask_question first/);
+  const event = promptEvent();
+  await harness.handlers.get("before_agent_start")(event, harness.ctx);
+  assert.match(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
 });
 
 test("grill-me skips footer status outside TUI", async () => {
@@ -830,19 +837,33 @@ test("grill-me uses ask_question with RPC UI and text without UI or an active to
   await harness.commands.get("grill-me").handler("on", harness.ctx);
 
   harness.setMode("rpc");
-  let result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
-  assert.match(result.systemPrompt, /call ask_question first/);
+  let event = promptEvent();
+  await harness.handlers.get("before_agent_start")(event, harness.ctx);
+  assert.match(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
 
   harness.setMode("print");
-  result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
-  assert.doesNotMatch(result.systemPrompt, /call ask_question first/);
-  assert.match(result.systemPrompt, /ask clarifying questions first in normal text/);
+  event = promptEvent();
+  await harness.handlers.get("before_agent_start")(event, harness.ctx);
+  assert.doesNotMatch(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
+  assert.match(event.systemPromptOptions.sections.grill_me, /ask clarifying questions first in normal text/);
 
   harness.setMode("tui");
   harness.setActiveTools([]);
-  result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base" }, harness.ctx);
-  assert.doesNotMatch(result.systemPrompt, /call ask_question first/);
-  assert.match(result.systemPrompt, /ask clarifying questions first in normal text/);
+  event = promptEvent();
+  await harness.handlers.get("before_agent_start")(event, harness.ctx);
+  assert.doesNotMatch(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
+  assert.match(event.systemPromptOptions.sections.grill_me, /ask clarifying questions first in normal text/);
+});
+
+test("grill-me still appends to prior full overrides and Pi 0.84 prompts without sections", async () => {
+  const harness = fakeHarness();
+  await harness.commands.get("grill-me").handler("on", harness.ctx);
+
+  for (const systemPromptOptions of [{}, { sections: {}, forceSystemPrompt: "base" }]) {
+    const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base", systemPromptOptions }, harness.ctx);
+    assert.match(result.systemPrompt, /base/);
+    assert.match(result.systemPrompt, /call ask_question first/);
+  }
 });
 
 test("grill-me status and invalid args do not persist new state", async () => {
