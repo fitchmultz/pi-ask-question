@@ -632,21 +632,21 @@ async function askWithDialogs(
   for (const question of questions) {
     if (signal?.aborted) return { answers: orderedAnswers(questions, answers), cancelled: true };
     const selected: string[] = [];
+    const customOption = uniqueOptionLabel(CUSTOM_OPTION, question.options);
+    const doneOption = uniqueOptionLabel(DONE_OPTION, question.options);
 
     while (true) {
       const options = [...question.options, ...selected.filter((answer) => !question.options.includes(answer))];
-      const customOption = uniqueOptionLabel(CUSTOM_OPTION, options);
-      const doneOption = uniqueOptionLabel(DONE_OPTION, options);
-      const choices = [...options, customOption];
+      const labels = question.multiSelect
+        ? options.map((answer) => `${selected.includes(answer) ? "☑" : "☐"} ${answer}`)
+        : options;
+      const choices = [...labels, customOption];
       if (question.multiSelect && selected.length) choices.push(doneOption);
-      const title = selected.length
-        ? `${question.question}\nSelected: ${JSON.stringify(selected)} (choose again to remove)`
-        : question.question;
-      const choice = await ui.select(title, choices, { signal });
+      const choice = await ui.select(question.question, choices, { signal });
       if (choice === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
       if (choice === doneOption) break;
 
-      let answer = choice;
+      let answer = options[labels.indexOf(choice)] ?? choice;
       let wasCustom = false;
       if (choice === customOption) {
         const input = await ui.input(question.question, "Type your answer", { signal });
