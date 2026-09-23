@@ -632,13 +632,17 @@ async function askWithDialogs(
   for (const question of questions) {
     if (signal?.aborted) return { answers: orderedAnswers(questions, answers), cancelled: true };
     const selected: string[] = [];
-    const customOption = uniqueOptionLabel(CUSTOM_OPTION, question.options);
-    const doneOption = uniqueOptionLabel(DONE_OPTION, question.options);
 
     while (true) {
-      const choices = [...question.options.filter((option) => !selected.includes(option)), customOption];
+      const options = [...question.options, ...selected.filter((answer) => !question.options.includes(answer))];
+      const customOption = uniqueOptionLabel(CUSTOM_OPTION, options);
+      const doneOption = uniqueOptionLabel(DONE_OPTION, options);
+      const choices = [...options, customOption];
       if (question.multiSelect && selected.length) choices.push(doneOption);
-      const choice = await ui.select(question.question, choices, { signal });
+      const title = selected.length
+        ? `${question.question}\nSelected: ${JSON.stringify(selected)} (choose again to remove)`
+        : question.question;
+      const choice = await ui.select(title, choices, { signal });
       if (choice === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
       if (choice === doneOption) break;
 
@@ -653,8 +657,11 @@ async function askWithDialogs(
         wasCustom = true;
       }
 
-      if (!selected.includes(answer)) selected.push(answer);
-      answers.set(question.id, {
+      const index = selected.indexOf(answer);
+      if (question.multiSelect && !wasCustom && index !== -1) selected.splice(index, 1);
+      else if (index === -1) selected.push(answer);
+      if (!selected.length) answers.delete(question.id);
+      else answers.set(question.id, {
         id: question.id,
         question: question.question,
         answer: question.multiSelect ? selected.join(", ") : answer,

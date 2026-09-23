@@ -127,10 +127,59 @@ test("ask_question uses sequential RPC dialogs and supports custom and multi-sel
   );
 
   assert.deepEqual(harness.dialogCalls.map((call) => `${call.method}:${call.title}`), [
-    "select:First?", "input:First?", "select:Second?", "select:Second?", "select:Second?",
+    "select:First?", "input:First?", "select:Second?",
+    'select:Second?\nSelected: ["A"] (choose again to remove)',
+    'select:Second?\nSelected: ["A","B"] (choose again to remove)',
   ]);
   assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["custom value", "A, B"]);
   assert.equal(result.details.cancelled, false);
+});
+
+test("RPC multi-select lets a user undo a choice before submitting", async () => {
+  const harness = fakeHarness();
+  harness.setMode("rpc");
+  harness.selections.push("A", "A", "B", "Done selecting");
+
+  const result = await harness.tools.get("ask_question").execute(
+    "correct-choice", { question: "Which?", options: ["A", "B"], multiSelect: true },
+    undefined, undefined, harness.ctx,
+  );
+
+  assert.deepEqual(harness.dialogCalls.map((call) => call.options), [
+    ["A", "B", "Type a custom answer"],
+    ["A", "B", "Type a custom answer", "Done selecting"],
+    ["A", "B", "Type a custom answer"],
+    ["A", "B", "Type a custom answer", "Done selecting"],
+  ]);
+  assert.deepEqual(harness.dialogCalls.map((call) => call.title), [
+    "Which?",
+    'Which?\nSelected: ["A"] (choose again to remove)',
+    "Which?",
+    'Which?\nSelected: ["B"] (choose again to remove)',
+  ]);
+  assert.deepEqual(result.details.answers[0]?.selectedOptions, ["B"]);
+  assert.equal(result.content[0].text, 'User answered: ["B"]');
+});
+
+test("RPC multi-select can remove a custom answer that matches a control label", async () => {
+  const harness = fakeHarness();
+  harness.setMode("rpc");
+  harness.selections.push("Type a custom answer", "Done selecting", "A", "Done selecting");
+  harness.inputs.push("Done selecting");
+
+  const result = await harness.tools.get("ask_question").execute(
+    "correct-custom", { question: "Which?", options: ["A"], multiSelect: true },
+    undefined, undefined, harness.ctx,
+  );
+
+  assert.deepEqual(harness.dialogCalls.filter((call) => call.method === "select").map((call) => call.options), [
+    ["A", "Type a custom answer"],
+    ["A", "Done selecting", "Type a custom answer", "Done selecting (2)"],
+    ["A", "Type a custom answer"],
+    ["A", "Type a custom answer", "Done selecting"],
+  ]);
+  assert.deepEqual(result.details.answers[0]?.selectedOptions, ["A"]);
+  assert.equal(result.content[0].text, 'User answered: ["A"]');
 });
 
 test("ask_question preserves comma-containing multi-select choices in TUI and RPC results", async () => {
@@ -719,7 +768,10 @@ test("ask_question suffixes RPC controls past user option collisions", async () 
     "Done selecting (2)",
     "Type a custom answer (3)",
   ]);
-  assert.deepEqual(harness.dialogCalls.at(-1)?.options, ["Type a custom answer (3)", "Done selecting (3)"]);
+  assert.deepEqual(harness.dialogCalls.at(-1)?.options, [
+    "Type a custom answer", "Type a custom answer (2)", "Done selecting", "Done selecting (2)",
+    "Type a custom answer (3)", "Done selecting (3)",
+  ]);
   assert.equal(
     result.details.answers[0]?.answer,
     "Type a custom answer, Type a custom answer (2), Done selecting, Done selecting (2)",

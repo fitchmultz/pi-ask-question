@@ -88,6 +88,7 @@ Ask several questions:
 - Do not include a custom-answer option; the UI adds one.
 - Multi-select results include `selectedOptions` in `details.answers`; tool text and the Review tab show an unambiguous JSON array. The existing comma-joined `answer` field remains available.
 - `ask_question` uses its full keyboard UI in TUI mode and sequential Pi dialogs in RPC mode.
+- RPC multi-select dialogs show the current selections; choose one again to remove it, including a custom answer.
 - TUI questions appear over the current screen, temporarily covering the footer and widgets while preserving the editor draft. Long lists scroll by complete wrapped choices with Up/Down.
 - PageUp/PageDown let you read a question, choice, or answer review longer than the screen; Shift+PageUp/Shift+PageDown also work in fullscreen on older Pi. While typing a custom answer, the list shows only that choice; Escape returns to the list.
 - Saved answers have a one-line preview while choosing; the Review tab retains their full text.
