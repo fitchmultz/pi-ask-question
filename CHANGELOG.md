@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Preserve exact multi-select choices in tool results and review, including labels containing commas.
 - Keep selected choices visible in short terminals and after resizing, with scrolling for long questions, choices, and answer reviews.
 
 ## 0.4.0 — 2026-09-07
