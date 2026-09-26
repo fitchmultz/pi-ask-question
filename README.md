@@ -14,7 +14,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 
 ## Requirements
 
-- Pi 0.87.1 or later
+- Pi 0.86.1 or later (official releases and the maintained fork)
 - Node.js 24 or later
 
 ## Install
@@ -110,7 +110,7 @@ npm install --ignore-scripts
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-The development and minimum supported Pi cohort is official `0.87.1`. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
+The development Pi cohort is official `0.87.1`. CI also qualifies the maintained fork, currently based on `0.86.1`. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
 
 `tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort, short-terminal choices and editing, paging, resize, fullscreen, and widget overlap, plus draft and keyboard ownership restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
 
