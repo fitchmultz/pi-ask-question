@@ -855,15 +855,16 @@ test("grill-me uses ask_question with RPC UI and text without UI or an active to
   assert.match(event.systemPromptOptions.sections.grill_me, /ask clarifying questions first in normal text/);
 });
 
-test("grill-me still appends to prior full overrides and Pi 0.84 prompts without sections", async () => {
+test("grill-me still appends to prior full overrides", async () => {
   const harness = fakeHarness();
   await harness.commands.get("grill-me").handler("on", harness.ctx);
 
-  for (const systemPromptOptions of [{}, { sections: {}, forceSystemPrompt: "base" }]) {
-    const result = await harness.handlers.get("before_agent_start")({ systemPrompt: "base", systemPromptOptions }, harness.ctx);
-    assert.match(result.systemPrompt, /base/);
-    assert.match(result.systemPrompt, /call ask_question first/);
-  }
+  const result = await harness.handlers.get("before_agent_start")({
+    systemPrompt: "base",
+    systemPromptOptions: { sections: {}, forceSystemPrompt: "base" },
+  }, harness.ctx);
+  assert.match(result.systemPrompt, /base/);
+  assert.match(result.systemPrompt, /call ask_question first/);
 });
 
 test("grill-me status and invalid args do not persist new state", async () => {

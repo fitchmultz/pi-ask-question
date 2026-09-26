@@ -829,11 +829,10 @@ function registerGrillMe(pi: ExtensionAPI) {
     if (!grillMeMode) return undefined;
     const useTool = ctx.hasUI && pi.getActiveTools().includes("ask_question");
     const guidance = grillMePrompt(useTool);
-    if (event.systemPromptOptions.sections && event.systemPromptOptions.forceSystemPrompt === undefined) {
+    if (event.systemPromptOptions.forceSystemPrompt === undefined) {
       event.systemPromptOptions.sections.grill_me = guidance;
       return;
     }
-    // Pi 0.84 has no prompt sections; preserve earlier full-prompt overrides.
     return { systemPrompt: `${event.systemPrompt}\n\n${guidance}` };
   });
 }
