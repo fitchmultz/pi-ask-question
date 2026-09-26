@@ -46,11 +46,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y fd-find ripgrep
           sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
-      - name: Qualify official Pi
-        run: |
-          version=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')
-          node automation/scripts/qualify.mjs --repo pi-ask-question --source "$GITHUB_WORKSPACE/extension" \
-            --host official --target "$version" --output "$RUNNER_TEMP/official-evidence"
       - name: Select pinned fork
         id: fork
         run: echo "ref=$(node -p 'require("./automation/host-targets.json").forkRef')" >> "$GITHUB_OUTPUT"
@@ -73,6 +68,13 @@ jobs:
           npm run build:offline
           node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "$FORK_REF"
           git diff --exit-code
+      - name: Use the extension npm version
+        run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
+      - name: Qualify official Pi
+        run: |
+          version=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')
+          node automation/scripts/qualify.mjs --repo pi-ask-question --source "$GITHUB_WORKSPACE/extension" \
+            --host official --target "$version" --output "$RUNNER_TEMP/official-evidence"
       - name: Qualify fork Pi
         env:
           PI_COMPAT_FORK_REF: ${{ steps.fork.outputs.ref }}
