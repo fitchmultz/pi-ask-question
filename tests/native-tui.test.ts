@@ -450,12 +450,15 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       }
     });
   } finally {
-    try { await cleanup?.(); } finally {
-      for (const [key, value] of Object.entries(previous)) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
+    // Node 24.0 can finish the parent callback before its queued subtests.
+    t.after(async () => {
+      try { await cleanup?.(); } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+        rmSync(home, { recursive: true, force: true });
       }
-      rmSync(home, { recursive: true, force: true });
-    }
+    });
   }
 });

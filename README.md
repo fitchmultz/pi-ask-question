@@ -25,7 +25,7 @@ Install it directly from GitHub with pi:
 pi install https://github.com/fitchmultz/pi-ask-question
 ```
 
-Restart Pi after installing or updating extension code or dependencies. The maintained fork's `/reload` refreshes resources and reinitializes cached code; it does not apply code updates.
+Use `/reload` after updating extension code on current official Pi and the maintained fork. Restart Pi after changing dependencies or the host runtime.
 
 For local development:
 
@@ -110,7 +110,7 @@ npm install --ignore-scripts
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-The development Pi cohort is official `0.87.1`. CI also qualifies the maintained fork at the commit pinned by the shared automation. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
+The development Pi cohort is official `0.99.1`. CI also checks out the maintained fork's `main` branch and qualifies that exact checkout, recording its commit SHA through the shared automation. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
 
 `tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort, short-terminal choices and editing, paging, resize, fullscreen, and widget overlap, plus draft and keyboard ownership restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
 
