@@ -14,7 +14,7 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 
 ## Requirements
 
-- Pi 0.87.1 or later (official releases and the maintained fork)
+- Pi 1.0.0 or later (official releases and the maintained fork)
 - Node.js 24 or later
 
 ## Install
@@ -110,9 +110,9 @@ npm install --ignore-scripts
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-The development Pi cohort is official `0.99.1`. CI also checks out the maintained fork's `main` branch and qualifies that exact checkout, recording its commit SHA through the shared automation. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`.
+The development Pi cohort is official `1.0.0`, with host TypeBox `1.3.27`. CI also checks out the maintained fork's `main` branch and qualifies that exact checkout, recording its commit SHA through the shared automation. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`. Both default fullscreen and regular mode use the host renderer; no additional fork TUI APIs are required.
 
-`tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort, short-terminal choices and editing, paging, resize, fullscreen, and widget overlap, plus draft and keyboard ownership restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Existing unit tests retain timeout, RPC dialog, custom answer, multi-select, and grill-mode coverage; this native TUI test is not a real RPC-client qualification.
+`tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort in default fullscreen and regular mode, short-terminal choices and editing, paging, resize, and widget overlap, plus draft and keyboard ownership restoration and native grill-mode tree/fork/resume/reload restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Unit tests retain timeout, custom answer, multi-select, and grill-mode coverage. `tests/rpc-ui.test.ts` exercises actual bundled-CLI RPC selection, custom input, multi-select, cancellation and reload recovery without provider calls.
 
 Key file:
 

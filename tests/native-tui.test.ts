@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -110,6 +110,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
     const viewport = () => (renderer().mode === "fullscreen" ? renderer().previousScreen : renderer().previousLines)?.slice(-terminal.rows) ?? [];
     const switchMode = (next: "regular" | "fullscreen") =>
       (mode as unknown as { switchTuiMode: (mode: "regular" | "fullscreen") => boolean }).switchTuiMode(next);
+    assert.equal(renderer().mode, "fullscreen", "Pi 1.0 defaults to fullscreen");
 
     await t.test("grill-me preserves instructions added by a later extension", async () => {
       try {
@@ -123,8 +124,11 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       }
     });
 
-    for (const action of ["answer", "escape", "abort"] as const) {
-      await t.test(action, async () => {
+    for (const [tuiMode, action] of (["fullscreen", "regular"] as const).flatMap(
+      (mode) => (["answer", "escape", "abort"] as const).map((action) => [mode, action] as const),
+    )) {
+      switchMode(tuiMode);
+      await t.test(`${tuiMode} ${action}`, async () => {
         ui.setEditorText("untouched draft");
         // Let the native differential renderer remove the previous dialog first.
         await nextRender();
@@ -187,7 +191,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         assert.deepEqual((result.details as { answers: { answer: string }[] }).answers.map((answer) => answer.answer), ["Native choice 30"]);
         assert.equal(ui.getEditorText(), "untouched draft");
         await nextRender();
-        assert.ok(renderer().previousLines?.some((line) => line.includes("footer status")), "Footer returns when the question closes");
+        assert.ok(viewport().some((line) => line.includes("footer status")), "Footer returns when the question closes");
       } finally {
         controller.abort();
         await execution;
@@ -448,6 +452,38 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         if (renderer().mode === "fullscreen") switchMode("regular");
         terminal.resize(40, 80);
       }
+    });
+
+    await t.test("grill-me follows tree, fork, resume and reload on the native runtime", async () => {
+      await runtime.session.prompt("/grill-me on");
+      const enabledEntry = runtime.session.sessionManager.getLeafId()!;
+      await runtime.session.prompt("/grill-me off");
+      assert.equal((await commandContext!.navigateTree(enabledEntry, { summarize: false })).cancelled, false);
+      const assertEnabled = async () => {
+        await runtime.session.extensionRunner.emitBeforeAgentStart("test", undefined, { cwd: home, selectedTools: ["ask_question"] });
+        assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
+      };
+      await assertEnabled();
+
+      const outgoing = commandContext!;
+      assert.equal((await outgoing.fork(enabledEntry, { position: "at", withSession: async (fresh) => {
+        fresh.ui.setEditorText("fork draft");
+      } })).cancelled, false);
+      assert.throws(() => outgoing.ui.getEditorText(), /stale|invalid|disposed|active/i);
+      await runtime.session.prompt("/test-ui-context");
+      await assertEnabled();
+
+      // A journal fixture built from the canonical manager is resumed by the real host.
+      const journal = join(home, "grill-resume.jsonl");
+      const manager = runtime.session.sessionManager;
+      writeFileSync(journal, [manager.getHeader(), ...manager.getBranch()].map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+      assert.equal((await commandContext!.switchSession(journal)).cancelled, false);
+      await runtime.session.prompt("/test-ui-context");
+      await assertEnabled();
+      await commandContext!.reload();
+      await runtime.session.prompt("/test-ui-context");
+      await assertEnabled();
+      await runtime.session.prompt("/grill-me off");
     });
   } finally {
     // Node 24.0 can finish the parent callback before its queued subtests.
