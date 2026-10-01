@@ -345,7 +345,7 @@ async function askWithKeyboard(
       if (showTabs && (matchesKey(data, Key.right) || keys.matches(data, "tui.input.tab"))) return moveTab(tab + 1);
       if (showTabs && (matchesKey(data, Key.left) || matchesKey(data, Key.shift("tab")))) return moveTab(tab - 1);
       if (keys.matches(data, "tui.select.cancel")) return finish(true);
-      // Older fullscreen Pi reserves plain Page keys for transcript scrolling.
+      // Fullscreen reserves plain Page keys for transcript scrolling.
       const pageUp = keys.matches(data, "tui.select.pageUp") || matchesKey(data, Key.shift("pageUp"));
       const pageDown = keys.matches(data, "tui.select.pageDown") || matchesKey(data, Key.shift("pageDown"));
 

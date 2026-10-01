@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-10-01
 
-- Qualify the TypeBox 1.3.34 development dependency while retaining host-provided runtime peers.
-- Require Node.js 24 and Pi 0.87.1, and update the development toolchain to TypeScript 7.
+- Require Pi 1.0.0 and Node.js 24, and qualify the exact official Pi 1.0.0 / TypeBox 1.3.27 cohort while retaining host-provided runtime peers.
+- Update repository typechecking from TypeScript 6 to TypeScript 7.0.2.
+- Exercise answer, Escape and caller abort in both default fullscreen and regular mode, preserving the editor draft and restoring focus.
+- Add bundled-CLI RPC dialog coverage for multi-select, typed answers, cancellation and recovery after reload, and native SDK grill-mode tree/fork/resume/reload coverage.
 - Compose `/grill-me` guidance with later extension prompt changes instead of replacing the full system prompt.
 - Allow RPC multi-select answers to be deselected, including custom answers.
 - Preserve exact multi-select choices in tool results and review, including labels containing commas.
