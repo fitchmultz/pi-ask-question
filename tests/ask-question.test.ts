@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { getEventListeners } from "node:events";
 import test from "node:test";
+import { Compile } from "typebox/compile";
 import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import askQuestion, { normalize } from "../extensions/ask-question.ts";
 
@@ -100,6 +101,28 @@ test("registers ask_question tool and grill-me command", () => {
 test("ask_question is registered sequential so concurrent calls cannot fight for keyboard focus", () => {
   const harness = fakeHarness();
   assert.equal(harness.tools.get("ask_question").executionMode, "sequential");
+});
+
+test("ask_question schema accepts supported inputs and rejects malformed arguments", () => {
+  const schema = fakeHarness().tools.get("ask_question").parameters;
+  const validator = Compile(schema);
+  for (const input of [
+    { question: "Which?", options: ["A", "B, C", "界🙂"], multiSelect: true },
+    { questions: [{ id: "scope", question: "Which?", options: ["Minimal"] }, { question: "Why?" }] },
+  ]) {
+    assert.equal(validator.Check(input), true, JSON.stringify(input));
+  }
+  for (const input of [
+    { question: "" },
+    { question: "Which?", options: [""] },
+    { question: "Which?", options: [1] },
+    { question: "Which?", multiSelect: "yes" },
+    { question: "Which?", unexpected: true },
+    { questions: [{ id: "scope" }] },
+    { questions: [{ question: "Which?", unexpected: true }] },
+  ]) {
+    assert.equal(validator.Check(input), false, JSON.stringify(input));
+  }
 });
 
 test("ask_question refuses modes without UI", async () => {

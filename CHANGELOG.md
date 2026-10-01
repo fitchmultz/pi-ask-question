@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Qualify the TypeBox 1.3.34 development dependency while retaining host-provided runtime peers.
 - Require Node.js 24 and Pi 0.87.1, and update the development toolchain to TypeScript 7.
 - Compose `/grill-me` guidance with later extension prompt changes instead of replacing the full system prompt.
 - Allow RPC multi-select answers to be deselected, including custom answers.
