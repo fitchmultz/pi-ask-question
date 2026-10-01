@@ -161,45 +161,48 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       });
     }
 
-    await t.test("long choices stay visible with a below-editor widget and height-only resize", async () => {
-      ui.setEditorText("untouched draft");
-      ui.setStatus("native-test", "footer status");
-      terminal.resize(24);
-      const controller = new AbortController();
-      const options = Array.from({ length: 30 }, (_, index) => `Native choice ${String(index + 1).padStart(2, "0")}`);
-      const execution = tool.execute("native-long-list", { question: "Native long list?", options }, controller.signal);
-      const assertVisible = (choice: string) => {
-        const rows = viewport();
-        assert.ok(rows.some((line) => line.includes("Native long list?")), "The question is on screen");
-        assert.ok(rows.some((line) => line.includes(">") && line.includes(choice)), `${choice} is selected on screen`);
-      };
-      try {
-        await nextRender();
-        assertVisible("Native choice 01");
-        ui.setWidget("native-below", Array.from({ length: 4 }, (_, index) => `Below ${index}`), { placement: "belowEditor" });
-        await nextRender();
-        assertVisible("Native choice 01");
-        terminal.resize(15);
-        await nextRender();
-        assertVisible("Native choice 01");
+    for (const tuiMode of ["fullscreen", "regular"] as const) {
+      switchMode(tuiMode);
+      await t.test(`${tuiMode} long choices stay visible with a below-editor widget and height-only resize`, async () => {
+        ui.setEditorText("untouched draft");
+        ui.setStatus("native-test", "footer status");
         terminal.resize(24);
-        for (let index = 0; index < 29; index += 1) terminal.send("\x1b[B");
-        await nextRender();
-        assertVisible("Native choice 30");
-        terminal.send("\r");
-        const result = await execution;
-        assert.deepEqual((result.details as { answers: { answer: string }[] }).answers.map((answer) => answer.answer), ["Native choice 30"]);
-        assert.equal(ui.getEditorText(), "untouched draft");
-        await nextRender();
-        assert.ok(viewport().some((line) => line.includes("footer status")), "Footer returns when the question closes");
-      } finally {
-        controller.abort();
-        await execution;
-        ui.setWidget("native-below", undefined);
-        ui.setStatus("native-test", undefined);
-        terminal.resize(40);
-      }
-    });
+        const controller = new AbortController();
+        const options = Array.from({ length: 30 }, (_, index) => `Native choice ${String(index + 1).padStart(2, "0")}`);
+        const execution = tool.execute("native-long-list", { question: "Native long list?", options }, controller.signal);
+        const assertVisible = (choice: string) => {
+          const rows = viewport();
+          assert.ok(rows.some((line) => line.includes("Native long list?")), "The question is on screen");
+          assert.ok(rows.some((line) => line.includes(">") && line.includes(choice)), `${choice} is selected on screen`);
+        };
+        try {
+          await nextRender();
+          assertVisible("Native choice 01");
+          ui.setWidget("native-below", Array.from({ length: 4 }, (_, index) => `Below ${index}`), { placement: "belowEditor" });
+          await nextRender();
+          assertVisible("Native choice 01");
+          terminal.resize(15);
+          await nextRender();
+          assertVisible("Native choice 01");
+          terminal.resize(24);
+          for (let index = 0; index < 29; index += 1) terminal.send("\x1b[B");
+          await nextRender();
+          assertVisible("Native choice 30");
+          terminal.send("\r");
+          const result = await execution;
+          assert.deepEqual((result.details as { answers: { answer: string }[] }).answers.map((answer) => answer.answer), ["Native choice 30"]);
+          assert.equal(ui.getEditorText(), "untouched draft");
+          await nextRender();
+          assert.ok(viewport().some((line) => line.includes("footer status")), "Footer returns when the question closes");
+        } finally {
+          controller.abort();
+          await execution;
+          ui.setWidget("native-below", undefined);
+          ui.setStatus("native-test", undefined);
+          terminal.resize(40);
+        }
+      });
+    }
 
     await t.test("fullscreen keeps the selected choice visible above a tall below-editor widget", async () => {
       ui.setWidget("native-below", Array.from({ length: 8 }, (_, index) => `Below ${index}`), { placement: "belowEditor" });
