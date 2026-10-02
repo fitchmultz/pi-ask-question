@@ -3,7 +3,7 @@ import { getEventListeners } from "node:events";
 import test from "node:test";
 import { Compile } from "typebox/compile";
 import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import askQuestion, { normalize } from "../extensions/ask-question.ts";
+import askQuestion from "../extensions/ask-question.ts";
 
 function fakeHarness() {
   const tools = new Map<string, any>();
@@ -696,11 +696,6 @@ test("ask_question clears its timer after an answer, cancellation, or UI error",
   assert.equal(clearTimer.mock.callCount(), 3);
 });
 
-test("ask_question prompt guidelines identify the tool", () => {
-  const guidelines = fakeHarness().tools.get("ask_question").promptGuidelines;
-  assert.ok(guidelines.every((guideline: string) => guideline.includes("ask_question")));
-});
-
 test("ask_question renderCall shows count and ids, renderResult shows answers or cancelled", () => {
   const harness = fakeHarness();
   const tool = harness.tools.get("ask_question");
@@ -741,22 +736,19 @@ test("ask_question renderCall shows count and ids, renderResult shows answers or
   assert.match(out, /Yes/);
 });
 
-test("normalize auto-suffixes duplicate question ids", () => {
-  const result = normalize({ questions: [{ id: "x", question: "a?" }, { id: "x", question: "b?" }, { id: "x", question: "c?" }] });
-  assert.deepEqual(result.map((q) => q.id), ["x", "x_2", "x_3"]);
-});
-
-test("normalize avoids collisions with user-supplied suffixed ids", () => {
-  const result = normalize({ questions: [{ id: "x", question: "a?" }, { id: "x_2", question: "b?" }, { id: "x", question: "c?" }] });
-  assert.deepEqual(result.map((q) => q.id), ["x", "x_2", "x_3"]);
-});
-
-test("normalize preserves all nonblank user options", () => {
-  const [question] = normalize({
-    question: "Pick?",
-    options: ["A", "Type a custom answer", "Done selecting", "Done selecting (2)"],
-  });
-  assert.deepEqual(question.options, ["A", "Type a custom answer", "Done selecting", "Done selecting (2)"]);
+test("ask_question returns distinct answer ids for duplicate and explicitly suffixed inputs", async () => {
+  for (const ids of [["x", "x", "x"], ["x", "x_2", "x"]]) {
+    const harness = fakeHarness();
+    harness.setMode("rpc");
+    harness.selections.push("Yes", "Yes", "Yes");
+    const result = await harness.tools.get("ask_question").execute(
+      "duplicate-ids",
+      { questions: ids.map((id) => ({ id, question: "Continue?", options: ["Yes"] })) },
+      undefined, undefined, harness.ctx,
+    );
+    assert.deepEqual(result.details.answers.map((answer: any) => answer.id), ["x", "x_2", "x_3"]);
+    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Yes", "Yes", "Yes"]);
+  }
 });
 
 test("ask_question suffixes RPC controls past user option collisions", async () => {

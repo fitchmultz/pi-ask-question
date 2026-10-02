@@ -89,7 +89,7 @@ function uniqueOptionLabel(label: string, options: string[]): string {
   return result;
 }
 
-export function normalize(params: { question?: string; options?: string[]; multiSelect?: boolean; questions?: Question[] }): NormalizedQuestion[] {
+function normalize(params: { question?: string; options?: string[]; multiSelect?: boolean; questions?: Question[] }): NormalizedQuestion[] {
   const raw = params.questions?.length
     ? params.questions
     : [{ id: "question_1", question: params.question ?? "", options: params.options, multiSelect: params.multiSelect }];
