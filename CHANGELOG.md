@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1 — 2026-10-04
+
+- Distribute this project publicly as `@fitchmultz/pi-ask-question`, preserving the existing version line, Git installation, `ask_question` tool, and `/grill-me` behavior.
+- Lead installation guidance with the owned scoped package and distinguish the unrelated unscoped npm package.
+- Qualify the latest stable official Pi and maintained fork main once per run, freezing their SDK and companion graphs across existing TUI/RPC, type, package, and native install checks.
+- Add a main-only, opt-in repository npm release pipeline that requires both host qualifications before publishing.
+
 ## 0.5.0 — 2026-10-01
 
 - Require Pi 1.0.0 and Node.js 24, and qualify the exact official Pi 1.0.0 / TypeBox 1.3.27 cohort while retaining host-provided runtime peers.

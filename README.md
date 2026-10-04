@@ -19,7 +19,15 @@ A [pi](https://github.com/earendil-works/pi-mono) extension that adds `ask_quest
 
 ## Install
 
-Install it directly from GitHub with pi:
+Install the scoped package with pi:
+
+```bash
+pi install npm:@fitchmultz/pi-ask-question
+```
+
+**The unscoped npm package `pi-ask-question` is not this project and is maintained by someone else.** Use `@fitchmultz/pi-ask-question` for this repository.
+
+GitHub remains a supported fallback, including existing tags:
 
 ```bash
 pi install https://github.com/fitchmultz/pi-ask-question
@@ -110,7 +118,9 @@ npm install --ignore-scripts
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-The development Pi cohort is official `1.0.0`, with host TypeBox `1.3.27`; the extension's development schema dependency is TypeBox `1.3.34`. Host dependencies and runtime peers are unchanged. CI also checks out the maintained fork's `main` branch and qualifies that exact checkout, recording its commit SHA through the shared automation. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Tests resolve the selected host from this checkout's `node_modules`. Both default fullscreen and regular mode use the host renderer; no additional fork TUI APIs are required.
+The lockfile is a reproducible development snapshot, not a release-qualification target. CI resolves the latest stable official Pi and the maintained fork's `main` commit once per run, then freezes those identities across tests, types, packing, and native Git/npm CLI checks. Shared automation selects each host's actual SDK and companion dependency graph; tests resolve that selected host from the isolated checkout's `node_modules`. Runtime host peers remain wildcard as required by Pi packages, and no production build or `prepare` is needed. Both default fullscreen and regular mode use the host renderer; no additional fork TUI APIs are required.
+
+The repository's main-only `npm-release.yml` pipeline publishes intentional stable version bumps with nonempty versioned changelog notes only after both frozen host qualifications pass. Publishing stays off unless the repository variable `NPM_RELEASE_ENABLED` is `true`; release planning and publishing use the same host inputs.
 
 `tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, caller abort in default fullscreen and regular mode, short-terminal choices and editing, paging, resize, and widget overlap, plus draft and keyboard ownership restoration and native grill-mode tree/fork/resume/reload restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls. Have `fd` and `rg` on PATH for native TUI initialization without downloads. Unit tests retain timeout, custom answer, multi-select, and grill-mode coverage. `tests/rpc-ui.test.ts` exercises actual bundled-CLI RPC selection, custom input, multi-select, cancellation and reload recovery without provider calls.
 
