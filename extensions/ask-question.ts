@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
@@ -44,6 +45,8 @@ const DONE_OPTION = "Done selecting";
 const GRILL_ME_STATE_TYPE = "ask-question.grill-me";
 const GRILL_ME_STATUS_KEY = "ask-question.grill-me";
 const GRILL_ME_ARGUMENTS = ["on", "off", "status"];
+const MAX_REMOTE_ANSWER_LENGTH = 16_384;
+const MAX_REMOTE_REQUESTS = 1024;
 
 function grillMePrompt(useTool: boolean): string {
   return `IMPORTANT: /grill-me mode is active.
@@ -170,9 +173,13 @@ function summarize(questions: NormalizedQuestion[], answers: Map<string, Answer>
 async function askWithKeyboard(
   questions: NormalizedQuestion[],
   ui: ExtensionContext["ui"],
+  pi: ExtensionAPI,
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   if (signal?.aborted) return { answers: [], cancelled: true };
+  const promptId = randomUUID();
+  let disposeBridge = () => {};
+  let announceBridge = () => {};
   return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, keys, done) => {
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
@@ -217,14 +224,96 @@ async function askWithKeyboard(
       tui.requestRender();
     };
     let finished = false;
+    let revision = 0;
+    let publishQueued = false;
+    let closed = false;
+    const acceptedRequests = new Set<string>();
+    function publishState() {
+      const question = current();
+      if (finished || editing || !question) {
+        if (!closed) pi.events.emit("pi-ask-question:state", { status: "closed", promptId });
+        closed = true;
+        return;
+      }
+      closed = false;
+      pi.events.emit("pi-ask-question:state", {
+        status: "waiting", promptId, questionId: question.id, revision,
+        question: question.question, options: [...question.options], multiSelect: question.multiSelect,
+      });
+    }
+    function stateChanged() {
+      revision += 1;
+      if (publishQueued) return;
+      publishQueued = true;
+      queueMicrotask(() => {
+        publishQueued = false;
+        publishState();
+      });
+    }
     const finish = (cancelled: boolean) => {
       if (finished) return;
-      finished = true;
-      signal?.removeEventListener("abort", abort);
+      disposeBridge();
       done({ answers: orderedAnswers(questions, answers), cancelled });
     };
     const abort = () => finish(true);
+    const unsubscribeAnswer = pi.events.on("pi-ask-question:answer", (data) => {
+      if (data === null || typeof data !== "object") return;
+      const request = data as Record<string, unknown>;
+      if (typeof request.requestId !== "string" || !request.requestId.trim() || request.requestId.length > 128) return;
+      // Other live owners on the shared bus must not acknowledge this prompt.
+      if (request.promptId !== promptId) return;
+      const receipt = (status: "answered" | "stale" | "invalid") =>
+        pi.events.emit("pi-ask-question:result", { requestId: request.requestId, promptId, status });
+      const question = current();
+      if (finished || signal?.aborted || editing || !question || request.questionId !== question.id ||
+          request.revision !== revision || acceptedRequests.has(request.requestId)) {
+        receipt("stale");
+        return;
+      }
+      const answer = request.answer;
+      const validText = typeof answer === "string" && answer.length <= MAX_REMOTE_ANSWER_LENGTH && Boolean(clean(answer));
+      const validOptions = Array.isArray(answer) && question.multiSelect && answer.length > 0 &&
+        answer.length <= question.options.length && new Set(answer).size === answer.length &&
+        Array.from(answer).every((value) => typeof value === "string" && question.options.includes(value)) &&
+        answer.reduce((size, value) => size + value.length, 0) <= MAX_REMOTE_ANSWER_LENGTH;
+      // ponytail: bound deduplication to 1024 commits per prompt; raise with a higher-volume client.
+      if ((!validText && !validOptions) || acceptedRequests.size >= MAX_REMOTE_REQUESTS) {
+        receipt("invalid");
+        return;
+      }
+      acceptedRequests.add(request.requestId);
+      if (typeof answer === "string") {
+        if (question.multiSelect) {
+          saveMultiCustomAnswer(question, answer.trim());
+          moveForwardIfAnswered(question);
+        } else saveSingleAnswer(answer.trim(), true);
+      } else {
+        const selected = selectedSet(question);
+        selected.clear();
+        customAnswers.delete(question.id);
+        for (const choice of answer as string[]) selected.add(choice);
+        syncMultiAnswer(question);
+        moveForwardIfAnswered(question);
+      }
+      if (allAnswered()) finish(false);
+      receipt("answered");
+    });
+    const unsubscribeShutdown = pi.on("session_shutdown", abort);
+    disposeBridge = () => {
+      if (finished) return;
+      finished = true;
+      signal?.removeEventListener("abort", abort);
+      unsubscribeAnswer();
+      unsubscribeShutdown();
+      publishState();
+    };
     signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) finish(true);
+    // Advertise only after the native host has installed this component.
+    announceBridge = () => {
+      if (signal?.aborted) abort();
+      else publishState();
+    };
 
     function moveTab(next: number) {
       tab = (next + questions.length + 1) % (questions.length + 1);
@@ -235,6 +324,7 @@ async function askWithKeyboard(
       reviewScroll = undefined;
       editing = false;
       editor.setText("");
+      stateChanged();
       refresh();
     }
 
@@ -248,6 +338,7 @@ async function askWithKeyboard(
     }
 
     function syncMultiAnswer(question: NormalizedQuestion) {
+      stateChanged();
       const selected = [...selectedSet(question)];
       if (!selected.length) {
         answers.delete(question.id);
@@ -280,6 +371,7 @@ async function askWithKeyboard(
       labelScroll = 0;
       optionScroll = 0;
       questionScroll = 0;
+      stateChanged();
       refresh();
     }
 
@@ -302,6 +394,7 @@ async function askWithKeyboard(
       const question = current();
       if (!question) return;
       answers.set(question.id, { id: question.id, question: question.question, answer, wasCustom });
+      stateChanged();
       if (questions.length === 1) finish(false);
       else moveTab(Math.min(tab + 1, submitTab));
     }
@@ -312,6 +405,7 @@ async function askWithKeyboard(
       editing = false;
       editor.setText("");
       if (!answer || !question) {
+        stateChanged();
         refresh();
         return;
       }
@@ -320,6 +414,7 @@ async function askWithKeyboard(
     };
 
     function handleInput(data: string) {
+      if (finished) return;
       if (editing) {
         if (maxQuestionScroll && matchesKey(data, Key.shift("pageUp"))) {
           questionScroll = Math.max(0, questionScroll - Math.max(1, questionPageRows - 1));
@@ -334,6 +429,7 @@ async function askWithKeyboard(
         if (keys.matches(data, "tui.select.cancel")) {
           editing = false;
           editor.setText("");
+          stateChanged();
           refresh();
           return;
         }
@@ -617,9 +713,13 @@ async function askWithKeyboard(
       render,
       handleInput,
       invalidate: () => { cachedLines = undefined; },
-      dispose: () => signal?.removeEventListener("abort", abort),
+      dispose: () => finish(true),
     };
-  }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" } });
+  }, {
+    overlay: true,
+    overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
+    onHandle: () => announceBridge(),
+  }).finally(() => disposeBridge());
 }
 
 async function askWithDialogs(
@@ -711,7 +811,7 @@ function restoreGrillMeState(entries: Iterable<unknown>): boolean {
   return enabled;
 }
 
-const askQuestionTool = defineTool({
+const askQuestionTool = (pi: ExtensionAPI) => defineTool({
   name: "ask_question",
   label: "Ask Question",
   description: "Ask the user one or more clarifying questions through pi's UI. After 5 minutes, returns an AFK reply so you can continue using your best judgement.",
@@ -734,7 +834,7 @@ const askQuestionTool = defineTool({
     const questionSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
     try {
       const result = ctx.mode === "tui"
-        ? await askWithKeyboard(questions, ctx.ui, questionSignal)
+        ? await askWithKeyboard(questions, ctx.ui, pi, questionSignal)
         : await askWithDialogs(questions, ctx.ui, questionSignal);
       const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
       const timedOut = result.cancelled && timeout.signal.aborted && !signal?.aborted;
@@ -838,6 +938,6 @@ function registerGrillMe(pi: ExtensionAPI) {
 }
 
 export default function askQuestion(pi: ExtensionAPI) {
-  pi.registerTool(askQuestionTool);
+  pi.registerTool(askQuestionTool(pi));
   registerGrillMe(pi);
 }

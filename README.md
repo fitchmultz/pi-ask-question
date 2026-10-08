@@ -111,6 +111,35 @@ Ask several questions:
 - The footer status is cleared when `/grill-me` is disabled.
 - The configured selection-cancel binding cancels and reports cancellation to the model.
 
+## Cooperative TUI answers
+
+Trusted extensions can observe and answer the **live TUI** question through the shared `pi.events` bus. This does not open a socket, start a process, queue model input, or simulate keyboard/focus actions. RPC clients continue using Pi's extension UI response protocol; other extensions' dialogs are not remotely answerable through this bridge.
+
+Events:
+
+```typescript
+// pi-ask-question:state
+{ status: "waiting", promptId: string, questionId: string, revision: number,
+  question: string, options: string[], multiSelect: boolean }
+{ status: "closed", promptId: string }
+
+// pi-ask-question:answer
+{ requestId: string, promptId: string, questionId: string, revision: number,
+  answer: string | string[] }
+
+// pi-ask-question:result
+{ requestId: string, promptId: string, status: "answered" | "stale" | "invalid" }
+```
+
+- Freeze all three target fields from `waiting`; never retarget a delayed reply. `promptId` is unique per tool call, `questionId` is the normalized answer ID, and `revision` changes on active-question or saved-answer changes.
+- A string is the same custom answer as typing locally: outer whitespace is trimmed, but even an exact option label remains custom text. No fuzzy option matching, comma splitting, or command expansion.
+- An array is allowed only for multi-select: a nonempty set of unique, **exact** existing option labels. It replaces the selected set, preserving array order and labels containing commas. A string for multi-select saves its custom choice alongside existing selections.
+- Answers are limited to 16,384 UTF-16 code units (summed across an array). `requestId` must be nonblank and at most 128 code units; use a new ID for each commit. At most 1,024 commits are accepted per prompt.
+- `answered` is emitted only after the owner applies the answer. Remote commits advance to the next question and submit once every question has an answer. Keyboard-only workflows retain the Review tab and manual submission.
+- Local changes invalidate earlier revisions immediately, before the coalesced state event. Custom editing and the Review tab emit `closed` to withdraw the remote target; returning to a question emits a new `waiting` target. `closed` therefore does not necessarily mean the whole tool call ended.
+- Invalid payloads do not change the question. Stale revisions/questions and reused accepted request IDs return `stale`. An unknown prompt, malformed request ID, or disposed owner may not respond at all; treat a missing receipt as expired, never successful.
+- Answer listeners are live only while the TUI owner exists and are removed idempotently on completion, disposal, timeout, abort, and session shutdown/reload. All questions still share the original single five-minute deadline.
+
 ## Development
 
 ```bash
