@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { getEventListeners } from "node:events";
+import { EventEmitter, getEventListeners } from "node:events";
 import test from "node:test";
 import { Compile } from "typebox/compile";
 import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
@@ -9,6 +9,7 @@ function fakeHarness() {
   const tools = new Map<string, any>();
   const commands = new Map<string, any>();
   const handlers = new Map<string, any>();
+  const events = new EventEmitter();
   const entries: unknown[] = [];
   let activeTools = ["ask_question"];
   const statuses: Array<{ key: string; text: string | undefined }> = [];
@@ -41,11 +42,12 @@ function fakeHarness() {
         dialogCalls.push({ method: "input", title, signal: opts?.signal });
         return inputs.shift();
       },
-      custom: (factory: any) => new Promise((resolve) => {
+      custom: (factory: any, options?: { onHandle?: (handle: unknown) => void }) => new Promise((resolve) => {
         customComponent = factory({ requestRender() {}, terminal }, theme, getKeybindings(), (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });
+        options?.onHandle?.(undefined);
       }),
     },
     sessionManager: { getBranch: () => entries },
@@ -54,7 +56,17 @@ function fakeHarness() {
   const pi = {
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: any) => commands.set(name, command),
-    on: (event: string, handler: any) => handlers.set(event, handler),
+    on: (event: string, handler: any) => {
+      handlers.set(event, handler);
+      return () => handlers.delete(event);
+    },
+    events: {
+      emit: (channel: string, data: unknown) => { events.emit(channel, data); },
+      on: (channel: string, handler: (data: unknown) => void) => {
+        events.on(channel, handler);
+        return () => { events.off(channel, handler); };
+      },
+    },
     appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
     getActiveTools: () => activeTools,
   };
@@ -65,6 +77,7 @@ function fakeHarness() {
     tools,
     commands,
     handlers,
+    events,
     entries,
     ctx,
     theme,
@@ -694,6 +707,199 @@ test("ask_question clears its timer after an answer, cancellation, or UI error",
   harness.ctx.ui.custom = async () => { throw new Error("UI failed"); };
   await assert.rejects(harness.tools.get("ask_question").execute("error", { question: "Choose?" }, undefined, undefined, harness.ctx), /UI failed/);
   assert.equal(clearTimer.mock.callCount(), 3);
+});
+
+function remoteHarness() {
+  const harness = fakeHarness();
+  const states: any[] = [];
+  const receipts: any[] = [];
+  harness.events.on("pi-ask-question:state", (state) => states.push(state));
+  harness.events.on("pi-ask-question:result", (receipt) => receipts.push(receipt));
+  const start = (params: unknown, signal?: AbortSignal) =>
+    harness.tools.get("ask_question").execute("remote", params, signal, undefined, harness.ctx);
+  const reply = (target: any, answer: unknown, requestId = "reply") => {
+    harness.events.emit("pi-ask-question:answer", {
+      requestId, promptId: target.promptId, questionId: target.questionId, revision: target.revision, answer,
+    });
+  };
+  return { ...harness, states, receipts, start, reply };
+}
+
+const flushState = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("remote strings complete the actual TUI owner as literal custom answers, never option matches", async () => {
+  for (const text of ["Yes", "yes please", "/grill-me on", "  界🙂, keep this\nliteral  "]) {
+    const harness = remoteHarness();
+    harness.events.on("pi-ask-question:result", () => {
+      assert.equal(harness.getCustomDoneCalls(), 1, "Success is emitted after the owner's completion callback");
+    });
+    const execution = harness.start({ question: "Approve?", options: ["Yes", "No"] });
+    const target = harness.states[0];
+    assert.equal(target.status, "waiting");
+    assert.deepEqual(target.options, ["Yes", "No"]);
+    harness.reply(target, text);
+    assert.equal(harness.getCustomDoneCalls(), 1);
+    assert.deepEqual(harness.receipts, [{ requestId: "reply", promptId: target.promptId, status: "answered" }]);
+    assert.deepEqual((await execution).details.answers, [{
+      id: "question_1", question: "Approve?", answer: text.trim(), wasCustom: true,
+    }]);
+    harness.reply(target, "No");
+    harness.getCustomComponent().handleInput("\r");
+    harness.getCustomComponent().dispose();
+    await flushState();
+    assert.equal(harness.getCustomDoneCalls(), 1);
+    assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
+    assert.deepEqual(harness.states.map((state) => state.status), ["waiting", "closed"]);
+  }
+});
+
+test("remote answers validate payloads without splitting or fuzzy matching and preserve exact multi-select progression", async () => {
+  const harness = remoteHarness();
+  const execution = harness.start({ questions: [
+    { id: "parts", question: "First?", options: ["Yes"] },
+    { id: "parts", question: "Which parts?", options: ["A", "B, C"], multiSelect: true },
+    { id: "why", question: "Why?", multiSelect: true },
+  ] });
+  let target = harness.states.at(-1);
+  for (const answer of ["", "   ", "x".repeat(16_385), ["Yes"], null, { text: "Yes" }]) {
+    harness.reply(target, answer, "invalid");
+    assert.equal(harness.receipts.at(-1).status, "invalid");
+    assert.equal(harness.getCustomDoneCalls(), 0);
+  }
+  harness.reply(target, "Yes", "first");
+  await flushState();
+  const firstTarget = target;
+  target = harness.states.at(-1);
+  assert.equal(target.questionId, "parts_2");
+  assert.ok(target.revision > firstTarget.revision);
+  harness.reply(firstTarget, "overwrite", "old-question");
+  assert.equal(harness.receipts.at(-1).status, "stale");
+  harness.reply(target, ["A"], "first");
+  assert.equal(harness.receipts.at(-1).status, "stale", "Accepted request IDs cannot be reused for a new question");
+  for (const answer of [[], ["B"], ["a"], ["A", "A"], ["A,B, C"], ["A", 1], new Array(1)]) {
+    harness.reply(target, answer, "invalid");
+    assert.equal(harness.receipts.at(-1).status, "invalid");
+  }
+  harness.reply(target, ["B, C", "A"], "second");
+  await flushState();
+  target = harness.states.at(-1);
+  assert.equal(target.questionId, "why");
+  harness.reply(target, "because, literally", "third");
+  const result = await execution;
+  assert.deepEqual(result.details.answers, [
+    { id: "parts", question: "First?", answer: "Yes", wasCustom: true },
+    { id: "parts_2", question: "Which parts?", answer: "B, C, A", selectedOptions: ["B, C", "A"], wasCustom: false },
+    { id: "why", question: "Why?", answer: "because, literally", selectedOptions: ["because, literally"], wasCustom: true },
+  ]);
+  assert.equal(result.details.cancelled, false);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+});
+
+test("local commits and tab changes invalidate frozen remote revisions without losing local selections", async () => {
+  const harness = remoteHarness();
+  const execution = harness.start({ questions: [
+    { id: "parts", question: "Parts?", options: ["A", "B"], multiSelect: true },
+    { id: "next", question: "Next?", options: ["Continue"] },
+  ] });
+  const component = harness.getCustomComponent();
+  const initial = harness.states.at(-1);
+  component.handleInput(" ");
+  harness.reply(initial, ["B"]);
+  assert.equal(harness.receipts.at(-1).status, "stale", "Local selection wins even before state publication");
+  await flushState();
+  const selected = harness.states.at(-1);
+  component.handleInput("\u001b[C");
+  component.handleInput("\u001b[D");
+  harness.reply(selected, ["B"], "returned-to-same-question");
+  assert.equal(harness.receipts.at(-1).status, "stale");
+  component.handleInput("\r");
+  component.handleInput("\r");
+  assert.match(component.render(80).join("\n"), /parts: \["A"\]/);
+  component.handleInput("\r");
+  assert.deepEqual((await execution).details.answers.map((answer: any) => answer.answer), ["A", "Continue"]);
+});
+
+test("local single-answer race and expired prompt IDs cannot retarget a subsequent tool call", async () => {
+  const harness = remoteHarness();
+  const execution = harness.start({ question: "Local first?", options: ["Keep local"] });
+  const old = harness.states.at(-1);
+  harness.getCustomComponent().handleInput("\r");
+  harness.reply(old, "replace local");
+  assert.equal((await execution).details.answers[0].answer, "Keep local");
+  assert.equal(harness.receipts.length, 0, "A disposed owner does not acknowledge late delivery");
+  const next = harness.start({ question: "New owner?", options: ["Next"] });
+  const current = harness.states.at(-1);
+  assert.notEqual(current.promptId, old.promptId);
+  harness.reply(old, "wrong prompt");
+  assert.equal(harness.getCustomDoneCalls(), 1);
+  harness.reply({ ...current, questionId: "wrong" }, "wrong question");
+  harness.reply({ ...current, revision: current.revision + 1 }, "wrong revision");
+  assert.deepEqual(harness.receipts.map((receipt) => receipt.status), ["stale", "stale"]);
+  harness.reply(current, "new owner");
+  assert.equal((await next).details.answers[0].answer, "new owner");
+});
+
+test("local custom editing withdraws the remote target and preserves its draft and cancel behavior", async () => {
+  const harness = remoteHarness();
+  const execution = harness.start({ question: "Details?" });
+  const target = harness.states.at(-1);
+  const component = harness.getCustomComponent();
+  component.handleInput("\r");
+  component.handleInput("local draft");
+  harness.reply(target, "remote draft");
+  assert.equal(harness.receipts.at(-1).status, "stale");
+  await flushState();
+  assert.equal(harness.states.at(-1).status, "closed");
+  component.handleInput("\u001b");
+  await flushState();
+  const resumed = harness.states.at(-1);
+  assert.equal(resumed.status, "waiting");
+  assert.ok(resumed.revision > target.revision);
+  component.handleInput("\r");
+  component.handleInput("local final");
+  component.handleInput("\r");
+  assert.equal((await execution).details.answers[0].answer, "local final");
+});
+
+test("remote progression retains the single five-minute deadline and saved answers on timeout", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const harness = remoteHarness();
+  const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] });
+  t.mock.timers.tick(200_000);
+  harness.reply(harness.states.at(-1), "saved");
+  await flushState();
+  const target = harness.states.at(-1);
+  t.mock.timers.tick(99_999);
+  assert.equal(harness.getCustomDoneCalls(), 0);
+  t.mock.timers.tick(1);
+  harness.reply(target, "too late");
+  const result = await execution;
+  assert.equal(result.details.timedOut, true);
+  assert.equal(result.details.cancelled, false);
+  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["saved"]);
+  assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
+  assert.equal(harness.getCustomDoneCalls(), 1);
+});
+
+test("abort, component disposal and shutdown/reload dispose live answer subscriptions idempotently", async () => {
+  for (const close of ["abort", "shutdown", "dispose"] as const) {
+    const harness = remoteHarness();
+    const controller = new AbortController();
+    const execution = harness.start({ question: "Still live?" }, controller.signal);
+    const target = harness.states.at(-1);
+    if (close === "abort") controller.abort();
+    else if (close === "dispose") harness.getCustomComponent().dispose();
+    else harness.handlers.get("session_shutdown")({ type: "session_shutdown", reason: "reload" }, harness.ctx);
+    harness.reply(target, "late");
+    harness.getCustomComponent().dispose();
+    controller.abort();
+    assert.equal((await execution).details.cancelled, true);
+    assert.equal(harness.getCustomDoneCalls(), 1);
+    assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
+    assert.equal(harness.handlers.has("session_shutdown"), false);
+    assert.deepEqual(harness.states.map((state) => state.status), ["waiting", "closed"]);
+    assert.deepEqual(harness.receipts, []);
+  }
 });
 
 test("ask_question renderCall shows count and ids, renderResult shows answers or cancelled", () => {

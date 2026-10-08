@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { Terminal } from "@earendil-works/pi-tui";
 
 // Use Pi's public Terminal injection, as its native TUI tests do. No process
@@ -34,6 +34,7 @@ class MemoryTerminal implements Terminal {
   clearScreen() {}
   setTitle(_title: string) {}
   setProgress(_active: boolean) {}
+  setProgramStatus(_status: unknown) {}
   send(data: string) {
     assert.ok(this.onInput, "Native TUI must own terminal input");
     this.onInput(data);
@@ -62,6 +63,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
   try {
     const pi = await import("@earendil-works/pi-coding-agent");
     let commandContext: ExtensionCommandContext | undefined;
+    let events: ExtensionAPI["events"] | undefined;
     let promptAfterLaterExtension = "";
     const settingsManager = pi.SettingsManager.inMemory({ theme: "dark", quietStartup: true });
     const modelRuntime = await pi.ModelRuntime.create({
@@ -74,6 +76,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
           noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
           additionalExtensionPaths: [fileURLToPath(new URL("../extensions/ask-question.ts", import.meta.url))],
           extensionFactories: [(api) => {
+            events = api.events;
             api.registerCommand("test-ui-context", {
               handler: async (_args, ctx) => { commandContext = ctx; },
             });
@@ -157,6 +160,59 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         } finally {
           controller.abort();
           await execution;
+        }
+      });
+    }
+
+    for (const tuiMode of ["fullscreen", "regular"] as const) {
+      switchMode(tuiMode);
+      await t.test(`${tuiMode} cooperative remote answer uses native completion and restores editor ownership`, async () => {
+        ui.setEditorText("untouched remote draft");
+        const controller = new AbortController();
+        const states: any[] = [];
+        const receipts: any[] = [];
+        const unsubscribeState = events!.on("pi-ask-question:state", (state) => { states.push(state); });
+        const unsubscribeResult = events!.on("pi-ask-question:result", (receipt) => { receipts.push(receipt); });
+        const execution = tool.execute("native-remote", {
+          questions: [
+            { id: "first", question: "Remote first?", options: ["Yes"] },
+            { id: "many", question: "Remote parts?", options: ["A", "B, C"], multiSelect: true },
+          ],
+        }, controller.signal);
+        try {
+          await nextRender();
+          const initial = states.at(-1);
+          assert.equal(initial.status, "waiting");
+          assert.ok(viewport().some((line) => line.includes("Remote first?")));
+          events!.emit("pi-ask-question:answer", {
+            ...initial, requestId: "native-first", answer: "Yes",
+          });
+          await nextRender();
+          const next = states.at(-1);
+          assert.equal(next.questionId, "many");
+          assert.ok(viewport().some((line) => line.includes("Remote parts?")), "Native UI advances to the real next question");
+          events!.emit("pi-ask-question:answer", { ...initial, requestId: "native-stale", answer: "wrong" });
+          assert.equal(receipts.at(-1).status, "stale");
+          events!.emit("pi-ask-question:answer", { ...next, requestId: "native-last", answer: ["B, C", "A"] });
+          const result = await execution;
+          const details = result.details as { cancelled: boolean; answers: { answer: string; wasCustom: boolean; selectedOptions?: string[] }[] };
+          assert.equal(details.cancelled, false);
+          assert.equal(details.answers[0].answer, "Yes");
+          assert.equal(details.answers[0].wasCustom, true, "An exact option string is still literal custom input");
+          assert.deepEqual(details.answers[1].selectedOptions, ["B, C", "A"]);
+          assert.equal(receipts.at(-1).status, "answered");
+          assert.equal(states.at(-1).status, "closed");
+          assert.equal(ui.getEditorText(), "untouched remote draft");
+          terminal.send("!");
+          assert.equal(ui.getEditorText(), "untouched remote draft!");
+          const receiptCount = receipts.length;
+          events!.emit("pi-ask-question:answer", { ...next, requestId: "native-last", answer: ["A"] });
+          assert.equal(receipts.length, receiptCount, "Completed native owner has unsubscribed");
+        } finally {
+          controller.abort();
+          await execution;
+          unsubscribeState();
+          unsubscribeResult();
         }
       });
     }
@@ -454,6 +510,39 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       } finally {
         if (renderer().mode === "fullscreen") switchMode("regular");
         terminal.resize(40, 80);
+      }
+    });
+
+    await t.test("native reload closes an active cooperative owner and never reuses its reply target", async () => {
+      const oldStates: any[] = [];
+      const unsubscribeOld = events!.on("pi-ask-question:state", (state) => { oldStates.push(state); });
+      const execution = tool.execute("remote-reload", { question: "Before reload?" });
+      await nextRender();
+      const oldTarget = oldStates.at(-1);
+      assert.equal(oldTarget.status, "waiting");
+      await commandContext!.reload();
+      assert.equal(((await execution).details as { cancelled: boolean }).cancelled, true);
+      assert.equal(oldStates.at(-1).status, "closed");
+      unsubscribeOld();
+      await runtime.session.prompt("/test-ui-context");
+      const freshTool = runtime.session.agent.state.tools.find((tool) => tool.name === "ask_question")!;
+      const states: any[] = [];
+      const unsubscribe = events!.on("pi-ask-question:state", (state) => { states.push(state); });
+      const controller = new AbortController();
+      const fresh = freshTool.execute("after-reload", { question: "After reload?" }, controller.signal);
+      try {
+        await nextRender();
+        const target = states.at(-1);
+        assert.notEqual(target.promptId, oldTarget.promptId);
+        events!.emit("pi-ask-question:answer", { ...oldTarget, requestId: "expired", answer: "wrong" });
+        await nextRender();
+        assert.ok(viewport().some((line) => line.includes("After reload?")), "Stale delivery cannot close the new owner");
+        events!.emit("pi-ask-question:answer", { ...target, requestId: "fresh", answer: "fresh answer" });
+        assert.equal(((await fresh).details as { answers: { answer: string }[] }).answers[0].answer, "fresh answer");
+      } finally {
+        controller.abort();
+        await fresh;
+        unsubscribe();
       }
     });
 
