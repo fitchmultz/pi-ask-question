@@ -10,7 +10,7 @@ The owned npm package is `@fitchmultz/pi-ask-question`:
 pi install npm:@fitchmultz/pi-ask-question
 ```
 
-GitHub remains a supported fallback, including existing tags:
+You can also install from GitHub:
 
 ```bash
 pi install https://github.com/fitchmultz/pi-ask-question
