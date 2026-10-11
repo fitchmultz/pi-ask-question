@@ -83,6 +83,22 @@ The configured selection-cancel binding cancels the question and reports cancell
 - Blank RPC custom answers return to option selection, matching TUI behavior; dismissing the input cancels.
 - Print and JSON modes return a tool error because they cannot collect user input.
 
+### Terminal controls
+
+These are the default controls; the UI shows your configured bindings.
+
+| Action | Control |
+| --- | --- |
+| Move through choices | Up/Down |
+| Select a single answer | Enter |
+| Toggle multi-select choices | Space |
+| Move on after selecting at least one multi-select answer | Enter |
+| Switch between questions and the final review (question sets and multi-select) | Left/Right or Tab; Shift+Tab moves back |
+| Submit from the final review | Enter |
+| Read long questions, choices, or reviews | PageUp/PageDown; Shift+PageUp/Shift+PageDown in fullscreen |
+| Read a long question while editing a custom answer | Shift+PageUp/Shift+PageDown |
+| Cancel the question, or return from a custom-answer edit to the choices | Escape |
+
 ## Five-minute timeout
 
 Each `ask_question` call has one five-minute limit, shared across all questions and dialogs. Answering part of a question set does not restart the timer.
