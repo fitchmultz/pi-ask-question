@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rewrite the README for human readers, add a question-flow diagram, and move API and maintainer details into linked guides.
 - Add a cooperative `pi.events` bridge for exact, correlated answers to live TUI questions, with receipts after applying the existing answer state.
 - Preserve local keyboard/dialog behavior and the shared five-minute deadline; reject stale/duplicate replies and dispose subscriptions on completion, cancellation, timeout, and reload.
 - Support literal custom text and exact multi-select arrays without interpreting speech as option approvals.
@@ -9,7 +10,7 @@
 ## 0.5.1 — 2026-10-04
 
 - Distribute this project publicly as `@fitchmultz/pi-ask-question`, preserving the existing version line, Git installation, `ask_question` tool, and `/grill-me` behavior.
-- Lead installation guidance with the owned scoped package and distinguish the unrelated unscoped npm package.
+- Lead installation guidance with the owned scoped package.
 - Qualify the latest stable official Pi and maintained fork main once per run, freezing their SDK and companion graphs across existing TUI/RPC, type, package, and native install checks.
 - Add a main-only, opt-in repository npm release pipeline that requires both host qualifications before publishing.
 
