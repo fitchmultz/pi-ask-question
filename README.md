@@ -1,55 +1,65 @@
 # pi-ask-question
 
-This extension lets [Pi](https://github.com/earendil-works/pi) ask you a question and wait for your answer before it carries on. Turn on `/grill-me` when you want to work through a vague request together before the agent starts.
+This [Pi](https://github.com/earendil-works/pi) extension asks for your decisions before the agent continues a task. Use `/grill-me` to guide the agent through unclear requirements.
 
-![Pi calls ask_question, you choose or type an answer in the question UI, and the agent continues with your answer. A separate five-minute timeout returns an AFK reply.](.github/readme/question-flow.png)
+![Pi calls ask_question, shows choices, and returns your answer to the agent. A separate five-minute timeout returns an AFK reply.](.github/readme/question-flow.png)
 
-*Answer in Pi, then let the agent carry on. If you haven't finished after five minutes, it receives an AFK reply.*
+*Pi shows the question and returns your answer to the agent.*
 
-## Install and try it
+## Install
 
-Requires Pi 1.0.0+ and Node.js 24+. Works with official Pi releases and Mitch's Pi fork.
+Requires Pi 1.0.0+ and Node.js 24+. Supports official Pi releases and Mitch's Pi fork.
+
+Run these commands:
 
 ```bash
 pi install npm:@fitchmultz/pi-ask-question
 pi
 ```
 
-Already running Pi? Use `/reload` to load the extension. Then try a request like:
+Use `/reload` if Pi is already open. See [Git installation](docs/reference.md#installation-and-updates) for the alternative source.
 
-> Help me plan a settings page. Use ask_question to ask which settings to include before you start.
+## Try it
 
-You can also [install from GitHub](docs/reference.md#installation-and-updates).
+Send this request to Pi:
 
-## Answering questions
+> Plan a settings page. Use ask_question to ask which settings to include first.
 
-Pick a choice or select **Type a custom answer** to write your own. For multi-select questions, you can choose more than one answer.
+Select a choice or select **Type a custom answer**. Multi-select questions let you select more than one choice.
 
-In the terminal, use Up/Down to move and Enter to answer. Space toggles multi-select choices. For a question set or multi-select, check the final review and press Enter to submit. Escape cancels; if you're editing a custom answer, it takes you back to the choices instead. Your editor draft stays intact while you're answering.
+Use Up/Down to move between choices. Press Enter to answer. For multi-select questions, press Space to change selected choices. Submit question sets and multi-select answers from the final review.
 
-The UI shows your configured bindings. See the [terminal controls](docs/reference.md#terminal-controls) for switching questions and reading long text.
+Escape leaves the custom answer editor; otherwise, it cancels the question. Your editor draft stays unchanged. See [terminal controls](docs/reference.md#terminal-controls) for question navigation, long text, and custom bindings.
 
-Each call shares a five-minute timer across all its questions. If it runs out, Pi receives an AFK reply and can use its best judgment. Saved answers are kept. Unfinished typing isn't submitted, and the tool doesn't pick an option for you.
+## Limits
 
-Question dialogs work in Pi's terminal and in RPC clients that handle Pi's selection and input dialogs. The tool returns an error in print and JSON modes.
+Each call has one five-minute limit for all questions. At timeout, the agent receives an AFK reply and can use its best judgment.
 
-## Work through a request with `/grill-me`
+The tool keeps saved answers. It does not submit unsaved custom answer text or select an answer for you.
 
-Turn it on before giving Pi a request you want to think through:
+Question dialogs require the terminal UI or an RPC client that supports Pi dialogs. Print and JSON modes return a tool error.
+
+## Check requirements with `/grill-me`
+
+Enable the mode before your request:
 
 ```text
 /grill-me on
 ```
 
-This tells the agent to check the available evidence first, then ask one blocking question at a time with its suggested answer first. Pi can still get on with obvious, low-risk steps.
+The mode guides the agent to check available evidence and ask one blocking question at a time. The agent puts its suggested answer first. The agent can continue with obvious, low-risk steps.
 
-Use `/grill-me` to toggle, `/grill-me off` to stop, or `/grill-me status` to check. You'll see `grill-mode` in the terminal footer while it's on. Pi remembers the setting for your current session branch, even after `/reload`. In print and JSON modes, grill-me asks in normal text.
+Use `/grill-me` to toggle the mode. Use `/grill-me off` to disable the mode. Use `/grill-me status` to check the mode.
 
-## More details
+The terminal footer shows `grill-mode` when enabled. Pi saves the setting in your current session branch. The setting survives `/reload`.
 
-The [tool reference](docs/reference.md#tool-shape) has input examples, result fields, and the finer points of UI behavior. If you're building an extension that answers questions through Pi's event bus, see [cooperative TUI answers](docs/reference.md#cooperative-tui-answers).
+In print and JSON modes, the agent asks questions in normal text.
 
-The [development guide](docs/development.md) covers local loading, tests, host compatibility, and publishing. See the [changelog](CHANGELOG.md) for recent changes, or [open an issue](https://github.com/fitchmultz/pi-ask-question/issues) if something isn't working.
+## Reference
+
+[Tool reference](docs/reference.md#tool-shape) covers input examples, result fields, and UI details. [Cooperative TUI answers](docs/reference.md#cooperative-tui-answers) documents the event protocol for trusted extensions.
+
+[Development](docs/development.md) covers local tests, host compatibility, and publication. See the [changelog](CHANGELOG.md) for changes. [Report an issue](https://github.com/fitchmultz/pi-ask-question/issues) if the extension fails.
 
 ## License
 
