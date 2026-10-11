@@ -4,8 +4,6 @@ This [Pi](https://github.com/earendil-works/pi) extension asks for your decision
 
 ![Pi calls ask_question, shows choices, and returns your answer to the agent. A separate five-minute timeout returns an AFK reply.](.github/readme/question-flow.png)
 
-*Pi shows the question and returns your answer to the agent.*
-
 ## Install
 
 Requires Pi 1.0.0+ and Node.js 24+. Supports official Pi releases and Mitch's Pi fork.
