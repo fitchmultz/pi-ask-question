@@ -4,8 +4,32 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import type { BuildSystemPromptOptions, ExtensionAPI, ExtensionCommandContext, ExtensionRunner } from "@earendil-works/pi-coding-agent";
 import type { Terminal } from "@earendil-works/pi-tui";
+
+type LegacyBeforeAgentStart = (
+  prompt: string, images: undefined, options: BuildSystemPromptOptions,
+) => ReturnType<ExtensionRunner["emitBeforeAgentStart"]>;
+type TriggerBeforeAgentStart = (
+  trigger: { messageType: "user"; prompt: string }, options: BuildSystemPromptOptions,
+) => ReturnType<ExtensionRunner["emitBeforeAgentStart"]>;
+
+function usesLegacyBeforeAgentStart(
+  emit: LegacyBeforeAgentStart | TriggerBeforeAgentStart,
+): emit is LegacyBeforeAgentStart {
+  // Official Pi 1.1.0 takes three arguments; newer hosts take a trigger and options.
+  return emit.length === 3;
+}
+
+function emitUserBeforeAgentStart(
+  runner: { emitBeforeAgentStart: LegacyBeforeAgentStart | TriggerBeforeAgentStart },
+  prompt: string, options: BuildSystemPromptOptions,
+) {
+  const emit: LegacyBeforeAgentStart | TriggerBeforeAgentStart = runner.emitBeforeAgentStart.bind(runner);
+  return usesLegacyBeforeAgentStart(emit)
+    ? emit(prompt, undefined, options)
+    : emit({ messageType: "user", prompt }, options);
+}
 
 // Use Pi's public Terminal injection, as its native TUI tests do. No process
 // terminal, clipboard, renderer mock, or custom() double participates here.
@@ -118,7 +142,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
     await t.test("grill-me preserves instructions added by a later extension", async () => {
       try {
         await runtime.session.prompt("/grill-me on");
-        await runtime.session.extensionRunner.emitBeforeAgentStart("test", undefined, { cwd: home, selectedTools: ["ask_question"] });
+        await emitUserBeforeAgentStart(runtime.session.extensionRunner, "test", { cwd: home, selectedTools: ["ask_question"] });
         assert.ok(promptAfterLaterExtension.includes(`<cwd>\n${otherCwd}\n</cwd>`), "The model sees the updated working directory");
         assert.match(promptAfterLaterExtension, /Confirm destructive actions\./);
         assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
@@ -552,7 +576,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       await runtime.session.prompt("/grill-me off");
       assert.equal((await commandContext!.navigateTree(enabledEntry, { summarize: false })).cancelled, false);
       const assertEnabled = async () => {
-        await runtime.session.extensionRunner.emitBeforeAgentStart("test", undefined, { cwd: home, selectedTools: ["ask_question"] });
+        await emitUserBeforeAgentStart(runtime.session.extensionRunner, "test", { cwd: home, selectedTools: ["ask_question"] });
         assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
       };
       await assertEnabled();
