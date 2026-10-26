@@ -130,7 +130,8 @@ Events:
 ```typescript
 // pi-ask-question:state
 { status: "waiting", promptId: string, questionId: string, revision: number,
-  question: string, options: string[], multiSelect: boolean }
+  question: string, options: string[], multiSelect: boolean,
+  protocolVersion: 1, ownerGeneration: string, nativeRoot: string, deadline: number }
 { status: "closed", promptId: string }
 
 // pi-ask-question:answer
@@ -147,5 +148,45 @@ Events:
 - Answers are limited to 16,384 UTF-16 code units (summed across an array). `requestId` must be nonblank and at most 128 code units; use a new ID for each commit. At most 1,024 commits are accepted per prompt.
 - `answered` is emitted only after the owner applies the answer. Remote commits advance to the next question and submit once every question has an answer. Keyboard-only workflows retain the review and manual submission.
 - Local changes invalidate earlier revisions immediately, before the coalesced state event. Custom editing and the review emit `closed` to withdraw the remote target; returning to a question emits a new `waiting` target. `closed` therefore does not necessarily mean the whole tool call ended.
-- Invalid payloads do not change the question. Stale revisions/questions and reused accepted request IDs return `stale`. An unknown prompt, malformed request ID, or disposed owner may not respond at all; treat a missing receipt as expired, never successful.
+- Invalid payloads do not change the question. Stale revisions/questions and reused accepted request IDs return `stale`. An unknown prompt, malformed request ID, or disposed owner may not respond at all; a missing receipt is **unknown**, never success or permission to reapply.
 - Answer listeners are live only while the TUI owner exists and are removed idempotently on completion, disposal, timeout, abort, and session shutdown/reload. All questions still share the original single five-minute deadline.
+
+### Observer handshake and accepted-answer lookup (protocol 1)
+
+Subscribe before emitting a query. The owner responds on the same process-local bus, without typing, opening a dialog or starting a model:
+
+```typescript
+// pi-ask-question:query
+{ queryId: string, protocolVersion: 1 }
+
+// pi-ask-question:snapshot
+{ queryId: string, protocolVersion: 1, ownerGeneration: string,
+  nativeRoot: string, mode: string, status: "waiting" | "idle" | "unsupported",
+  // When waiting: all fields from the waiting state above.
+}
+
+// pi-ask-question:answer (versioned; the unversioned form above remains supported)
+{ protocolVersion: 1, ownerGeneration: string, nativeRoot: string, deadline: number,
+  requestId: string, promptId: string, questionId: string, revision: number,
+  answer: string | string[] }
+
+// pi-ask-question:lookup
+{ queryId: string, protocolVersion: 1, ownerGeneration: string, nativeRoot: string,
+  promptId: string, requestId: string }
+
+// pi-ask-question:lookup-result
+{ queryId: string, protocolVersion: 1, ownerGeneration: string, nativeRoot: string,
+  promptId: string, requestId: string,
+  status: "answered" | "unknown" | "stale" | "unsupported",
+  // Only when answered:
+  questionId?: string, revision?: number, deadline?: number, answerFingerprint?: string }
+```
+
+- `queryId` follows the same nonblank, 128-code-unit bound as answer `requestId`. It correlates an observation, not an answer attempt.
+- `nativeRoot` is the exact native session ID. `ownerGeneration` is a new UUID per loaded extension runtime, not an Intercom peer or authorization grant. Freeze both with the complete question target. Reload/session replacement invalidates the old generation.
+- `deadline` is the original call's five-minute deadline in Unix milliseconds. Querying, editing and progression do not renew it. Expired targets cannot apply even if the timeout callback has not run yet.
+- A query reads the current owner directly, including changes not yet emitted as coalesced state events. `idle` means no remotely answerable question **now**, including local editing or review; it is not proof that the tool call ended. RPC, print/JSON and incompatible protocol versions return `unsupported`. Before session startup, mode/root may be unavailable. An older extension without this handshake sends no response; never substitute keyboard injection or a guessed deadline.
+- Versioned answers must match protocol, owner generation, native root, deadline, prompt, question and revision. The legacy unversioned form retains its original prompt/revision guards.
+- Lookup is read-only. `answered` attests that the original owner applied this answer ID; it does not promise that a later local edit preserved that value, or that the model/task completed. It returns the accepted target and a lowercase SHA-256 fingerprint of UTF-8 `JSON.stringify([1, ownerGeneration, nativeRoot, promptId, questionId, revision, deadline, answer])`, using the exact submitted string/array before trimming.
+- The owner retains only the latest 1,024 accepted receipts across calls in this runtime, with no raw answer text. Receipt eviction, process loss or reload can make an old application `unknown` or its generation `stale`. These are not durable receipts. They never authorize replay. Keep the original immutable answer ID, target and value in the caller's own delivery record.
+- A repeated accepted answer ID cannot apply again to the same prompt, including changed content. Query its original receipt instead of resending. Shutdown disposes query/lookup subscriptions and clears runtime-local receipts.

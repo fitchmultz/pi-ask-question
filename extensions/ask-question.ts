@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
+import { createQuestionObserver, type QuestionObserver } from "./lib/question-observer.ts";
 
 type Question = {
   id?: string;
@@ -174,6 +175,8 @@ async function askWithKeyboard(
   questions: NormalizedQuestion[],
   ui: ExtensionContext["ui"],
   pi: ExtensionAPI,
+  observer: QuestionObserver,
+  deadline: number,
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   if (signal?.aborted) return { answers: [], cancelled: true };
@@ -227,19 +230,26 @@ async function askWithKeyboard(
     let revision = 0;
     let publishQueued = false;
     let closed = false;
+    let announced = false;
     const acceptedRequests = new Set<string>();
-    function publishState() {
+    function waitingState() {
       const question = current();
-      if (finished || editing || !question) {
+      if (!announced || finished || signal?.aborted || editing || !question || Date.now() >= deadline) return undefined;
+      return {
+        status: "waiting" as const, ...observer.identity(), promptId, questionId: question.id, revision, deadline,
+        question: question.question, options: [...question.options], multiSelect: question.multiSelect,
+      };
+    }
+    const unwatch = observer.watch(waitingState);
+    function publishState() {
+      const waiting = waitingState();
+      if (!waiting) {
         if (!closed) pi.events.emit("pi-ask-question:state", { status: "closed", promptId });
         closed = true;
         return;
       }
       closed = false;
-      pi.events.emit("pi-ask-question:state", {
-        status: "waiting", promptId, questionId: question.id, revision,
-        question: question.question, options: [...question.options], multiSelect: question.multiSelect,
-      });
+      pi.events.emit("pi-ask-question:state", waiting);
     }
     function stateChanged() {
       revision += 1;
@@ -266,7 +276,8 @@ async function askWithKeyboard(
         pi.events.emit("pi-ask-question:result", { requestId: request.requestId, promptId, status });
       const question = current();
       if (finished || signal?.aborted || editing || !question || request.questionId !== question.id ||
-          request.revision !== revision || acceptedRequests.has(request.requestId)) {
+          request.revision !== revision || acceptedRequests.has(request.requestId) ||
+          !observer.matches(request, deadline) || Date.now() >= deadline) {
         receipt("stale");
         return;
       }
@@ -281,6 +292,7 @@ async function askWithKeyboard(
         receipt("invalid");
         return;
       }
+      const target = { promptId, questionId: question.id, revision, deadline };
       acceptedRequests.add(request.requestId);
       if (typeof answer === "string") {
         if (question.multiSelect) {
@@ -296,6 +308,7 @@ async function askWithKeyboard(
         moveForwardIfAnswered(question);
       }
       if (allAnswered()) finish(false);
+      observer.accept(target, request.requestId, answer as string | string[]);
       receipt("answered");
     });
     const unsubscribeShutdown = pi.on("session_shutdown", abort);
@@ -303,6 +316,7 @@ async function askWithKeyboard(
       if (finished) return;
       finished = true;
       signal?.removeEventListener("abort", abort);
+      unwatch();
       unsubscribeAnswer();
       unsubscribeShutdown();
       publishState();
@@ -311,6 +325,7 @@ async function askWithKeyboard(
     if (signal?.aborted) finish(true);
     // Advertise only after the native host has installed this component.
     announceBridge = () => {
+      announced = true;
       if (signal?.aborted) abort();
       else publishState();
     };
@@ -811,7 +826,7 @@ function restoreGrillMeState(entries: Iterable<unknown>): boolean {
   return enabled;
 }
 
-const askQuestionTool = (pi: ExtensionAPI) => defineTool({
+const askQuestionTool = (pi: ExtensionAPI, observer: QuestionObserver) => defineTool({
   name: "ask_question",
   label: "Ask Question",
   description: "Ask the user one or more clarifying questions through pi's UI. After 5 minutes, returns an AFK reply so you can continue using your best judgement.",
@@ -829,12 +844,14 @@ const askQuestionTool = (pi: ExtensionAPI) => defineTool({
     if (!questions.length) throw new Error("ask_question needs either question or questions[].");
     if (!ctx.hasUI) throw new Error("ask_question needs Pi TUI or RPC UI support.");
 
+    observer.identify(ctx);
     const timeout = new AbortController();
+    const deadline = Date.now() + QUESTION_TIMEOUT_MS;
     const timer = setTimeout(() => timeout.abort(), QUESTION_TIMEOUT_MS);
     const questionSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
     try {
       const result = ctx.mode === "tui"
-        ? await askWithKeyboard(questions, ctx.ui, pi, questionSignal)
+        ? await askWithKeyboard(questions, ctx.ui, pi, observer, deadline, questionSignal)
         : await askWithDialogs(questions, ctx.ui, questionSignal);
       const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
       const timedOut = result.cancelled && timeout.signal.aborted && !signal?.aborted;
@@ -938,6 +955,6 @@ function registerGrillMe(pi: ExtensionAPI) {
 }
 
 export default function askQuestion(pi: ExtensionAPI) {
-  pi.registerTool(askQuestionTool(pi));
+  pi.registerTool(askQuestionTool(pi, createQuestionObserver(pi)));
   registerGrillMe(pi);
 }

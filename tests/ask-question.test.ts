@@ -9,6 +9,7 @@ function fakeHarness() {
   const tools = new Map<string, any>();
   const commands = new Map<string, any>();
   const handlers = new Map<string, any>();
+  const subscriptions = new Map<string, Set<any>>();
   const events = new EventEmitter();
   const entries: unknown[] = [];
   let activeTools = ["ask_question"];
@@ -50,15 +51,24 @@ function fakeHarness() {
         options?.onHandle?.(undefined);
       }),
     },
-    sessionManager: { getBranch: () => entries },
+    sessionManager: { getBranch: () => entries, getSessionId: () => "native-test-root" },
   };
 
   const pi = {
     registerTool: (tool: any) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: any) => commands.set(name, command),
     on: (event: string, handler: any) => {
-      handlers.set(event, handler);
-      return () => handlers.delete(event);
+      let listeners = subscriptions.get(event);
+      if (!listeners) subscriptions.set(event, listeners = new Set());
+      listeners.add(handler);
+      handlers.set(event, (...args: any[]) => {
+        const results = [...subscriptions.get(event)!].map((listener) => listener(...args));
+        return results.find((result) => result !== undefined);
+      });
+      return () => {
+        listeners.delete(handler);
+        if (!listeners.size) handlers.delete(event);
+      };
     },
     events: {
       emit: (channel: string, data: unknown) => { events.emit(channel, data); },
@@ -727,6 +737,69 @@ function remoteHarness() {
 
 const flushState = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+test("a late observer reads the true current target and looks up a lost accepted result without replay", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
+  const harness = remoteHarness();
+  const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] });
+  const snapshots: any[] = [];
+  const lookups: any[] = [];
+  harness.events.on("pi-ask-question:snapshot", (data) => snapshots.push(data));
+  harness.events.on("pi-ask-question:lookup-result", (data) => lookups.push(data));
+  const query = () => harness.events.emit("pi-ask-question:query", { queryId: "late", protocolVersion: 1 });
+  t.mock.timers.tick(200_000);
+  query();
+  const target = snapshots.at(-1);
+  assert.ok(target, "An observer attaching after waiting was emitted receives a snapshot");
+  assert.equal(target.status, "waiting");
+  assert.equal(target.deadline, 301_000);
+  assert.equal(target.nativeRoot, "native-test-root");
+  assert.equal(typeof target.ownerGeneration, "string");
+  for (const changed of [{ ownerGeneration: "old-owner" }, { nativeRoot: "other-root" },
+    { deadline: target.deadline + 1 }, { protocolVersion: 2 }]) {
+    harness.events.emit("pi-ask-question:answer", { ...target, ...changed, requestId: "not-applied", answer: "wrong target" });
+    assert.equal(harness.receipts.at(-1).status, "stale");
+  }
+  harness.events.emit("pi-ask-question:answer", { ...target, requestId: "accepted-first", answer: "saved" });
+  // Discard the result, as a disconnected adapter would.
+  harness.receipts.length = 0;
+  query();
+  assert.equal(snapshots.at(-1).questionId, "question_2", "Query reads fresh owner state before coalesced publication");
+  assert.equal(snapshots.at(-1).deadline, target.deadline, "Progression never extends the timer");
+  const lookup = { protocolVersion: 1, queryId: "reconcile", ownerGeneration: target.ownerGeneration,
+    nativeRoot: target.nativeRoot, promptId: target.promptId, requestId: "accepted-first" };
+  harness.events.emit("pi-ask-question:lookup", lookup);
+  assert.equal(lookups.at(-1).status, "answered");
+  assert.equal(lookups.at(-1).questionId, target.questionId);
+  assert.match(lookups.at(-1).answerFingerprint, /^[a-f0-9]{64}$/);
+  harness.events.emit("pi-ask-question:answer", { ...snapshots.at(-1), requestId: "accepted-first", answer: "changed" });
+  assert.equal(harness.receipts.at(-1).status, "stale");
+  harness.reply(snapshots.at(-1), "last", "accepted-last");
+  assert.deepEqual((await execution).details.answers.map((answer: any) => answer.answer), ["saved", "last"]);
+  harness.events.emit("pi-ask-question:lookup", lookup);
+  assert.equal(lookups.at(-1).status, "answered", "Completion retains the accepted application, not just a live listener");
+  harness.events.emit("pi-ask-question:lookup", { ...lookup, requestId: "never-applied" });
+  assert.equal(lookups.at(-1).status, "unknown", "Absence is not proof an answer was not applied elsewhere");
+  harness.events.emit("pi-ask-question:lookup", { ...lookup, ownerGeneration: "old-owner" });
+  assert.equal(lookups.at(-1).status, "stale");
+  harness.events.emit("pi-ask-question:query", { queryId: "future", protocolVersion: 2 });
+  assert.equal(snapshots.at(-1).status, "unsupported");
+});
+
+test("the observer reports RPC and print as unsupported without injecting UI input", async () => {
+  for (const mode of ["rpc", "print"]) {
+    const harness = fakeHarness();
+    harness.setMode(mode);
+    await harness.handlers.get("session_start")({}, harness.ctx);
+    let snapshot: any;
+    harness.events.on("pi-ask-question:snapshot", (data) => { snapshot = data; });
+    harness.events.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "mode" });
+    assert.equal(snapshot.status, "unsupported");
+    assert.equal(snapshot.mode, mode);
+    assert.equal(harness.dialogCalls.length, 0);
+    assert.equal(harness.getCustomDoneCalls(), 0);
+  }
+});
+
 test("remote strings complete the actual TUI owner as literal custom answers, never option matches", async () => {
   for (const text of ["Yes", "yes please", "/grill-me on", "  界🙂, keep this\nliteral  "]) {
     const harness = remoteHarness();
@@ -846,6 +919,10 @@ test("local custom editing withdraws the remote target and preserves its draft a
   const component = harness.getCustomComponent();
   component.handleInput("\r");
   component.handleInput("local draft");
+  let snapshot: any;
+  harness.events.on("pi-ask-question:snapshot", (data) => { snapshot = data; });
+  harness.events.emit("pi-ask-question:query", { queryId: "editing", protocolVersion: 1 });
+  assert.equal(snapshot.status, "idle", "Late observers cannot acquire a target while local editing owns it");
   harness.reply(target, "remote draft");
   assert.equal(harness.receipts.at(-1).status, "stale");
   await flushState();
@@ -862,15 +939,19 @@ test("local custom editing withdraws the remote target and preserves its draft a
 });
 
 test("remote progression retains the single five-minute deadline and saved answers on timeout", async (t) => {
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
   const harness = remoteHarness();
   const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] });
   t.mock.timers.tick(200_000);
   harness.reply(harness.states.at(-1), "saved");
   await flushState();
   const target = harness.states.at(-1);
+  assert.equal(target.deadline, 301_000);
   t.mock.timers.tick(99_999);
   assert.equal(harness.getCustomDoneCalls(), 0);
+  t.mock.timers.setTime(target.deadline);
+  harness.reply(target, "deadline passed before timeout callback", "expired");
+  assert.equal(harness.receipts.at(-1).status, "stale");
   t.mock.timers.tick(1);
   harness.reply(target, "too late");
   const result = await execution;
@@ -896,7 +977,10 @@ test("abort, component disposal and shutdown/reload dispose live answer subscrip
     assert.equal((await execution).details.cancelled, true);
     assert.equal(harness.getCustomDoneCalls(), 1);
     assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
-    assert.equal(harness.handlers.has("session_shutdown"), false);
+    if (close === "shutdown") {
+      assert.equal(harness.events.listenerCount("pi-ask-question:query"), 0);
+      assert.equal(harness.events.listenerCount("pi-ask-question:lookup"), 0);
+    }
     assert.deepEqual(harness.states.map((state) => state.status), ["waiting", "closed"]);
     assert.deepEqual(harness.receipts, []);
   }
