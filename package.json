@@ -72,5 +72,10 @@
   "packageManager": "npm@12.2.0",
   "publishConfig": {
     "access": "public"
+  },
+  "overrides": {
+    "@earendil-works/pi-coding-agent": {
+      "undici": "8.12.3"
+    }
   }
 }
