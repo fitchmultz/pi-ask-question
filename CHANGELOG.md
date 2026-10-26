@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Let cooperative observers query a current TUI question after attachment, including its original deadline and runtime owner, and reconcile accepted answer IDs after a lost result without reapplying them.
 - Rewrite the README for human readers, add a question-flow diagram, and move API and maintainer details into linked guides.
 - Add a cooperative `pi.events` bridge for exact, correlated answers to live TUI questions, with receipts after applying the existing answer state.
 - Preserve local keyboard/dialog behavior and the shared five-minute deadline; reject stale/duplicate replies and dispose subscriptions on completion, cancellation, timeout, and reload.

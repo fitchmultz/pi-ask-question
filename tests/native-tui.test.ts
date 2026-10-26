@@ -194,9 +194,13 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         ui.setEditorText("untouched remote draft");
         const controller = new AbortController();
         const states: any[] = [];
+        const snapshots: any[] = [];
+        const lookups: any[] = [];
         const receipts: any[] = [];
         const unsubscribeState = events!.on("pi-ask-question:state", (state) => { states.push(state); });
         const unsubscribeResult = events!.on("pi-ask-question:result", (receipt) => { receipts.push(receipt); });
+        const unsubscribeSnapshot = events!.on("pi-ask-question:snapshot", (state) => { snapshots.push(state); });
+        const unsubscribeLookup = events!.on("pi-ask-question:lookup-result", (state) => { lookups.push(state); });
         const execution = tool.execute("native-remote", {
           questions: [
             { id: "first", question: "Remote first?", options: ["Yes"] },
@@ -205,8 +209,12 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         }, controller.signal);
         try {
           await nextRender();
-          const initial = states.at(-1);
+          events!.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "late-native" });
+          const initial = snapshots.at(-1);
           assert.equal(initial.status, "waiting");
+          assert.equal(initial.nativeRoot, runtime.session.sessionManager.getSessionId());
+          assert.equal(initial.deadline, states.at(-1).deadline);
+          assert.ok(initial.deadline > Date.now() && initial.deadline <= Date.now() + 300_000);
           assert.ok(viewport().some((line) => line.includes("Remote first?")));
           events!.emit("pi-ask-question:answer", {
             ...initial, requestId: "native-first", answer: "Yes",
@@ -225,6 +233,13 @@ test("native ask UI answers and cancels without consuming the main editor draft"
           assert.equal(details.answers[0].wasCustom, true, "An exact option string is still literal custom input");
           assert.deepEqual(details.answers[1].selectedOptions, ["B, C", "A"]);
           assert.equal(receipts.at(-1).status, "answered");
+          receipts.length = 0;
+          events!.emit("pi-ask-question:lookup", {
+            protocolVersion: 1, queryId: "lost-native-result", nativeRoot: initial.nativeRoot,
+            ownerGeneration: initial.ownerGeneration, promptId: initial.promptId, requestId: "native-last",
+          });
+          assert.equal(lookups.at(-1).status, "answered");
+          assert.equal(lookups.at(-1).questionId, "many");
           assert.equal(states.at(-1).status, "closed");
           assert.equal(ui.getEditorText(), "untouched remote draft");
           terminal.send("!");
@@ -237,6 +252,8 @@ test("native ask UI answers and cancels without consuming the main editor draft"
           await execution;
           unsubscribeState();
           unsubscribeResult();
+          unsubscribeSnapshot();
+          unsubscribeLookup();
         }
       });
     }
@@ -558,6 +575,17 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         await nextRender();
         const target = states.at(-1);
         assert.notEqual(target.promptId, oldTarget.promptId);
+        assert.notEqual(target.ownerGeneration, oldTarget.ownerGeneration);
+        const lookups: any[] = [];
+        const unsubscribeLookup = events!.on("pi-ask-question:lookup-result", (data) => { lookups.push(data); });
+        try {
+          events!.emit("pi-ask-question:lookup", {
+            ...oldTarget, queryId: "old-generation", requestId: "expired",
+          });
+          assert.equal(lookups.at(-1).status, "stale");
+        } finally {
+          unsubscribeLookup();
+        }
         events!.emit("pi-ask-question:answer", { ...oldTarget, requestId: "expired", answer: "wrong" });
         await nextRender();
         assert.ok(viewport().some((line) => line.includes("After reload?")), "Stale delivery cannot close the new owner");
