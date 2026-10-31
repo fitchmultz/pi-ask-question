@@ -2,7 +2,20 @@
 
 ## Unreleased
 
+## 0.6.2 - 2026-10-31
+
+<!-- npm-release:unreleased:start -->
 - Clarify compatibility and release guidance and remove outdated Git-only advice for the cooperative question bridge.
+<!-- npm-release:unreleased:end -->
+
+- Automate reviewed npm patch releases (#51) ([e00bcb5](https://github.com/fitchmultz/pi-ask-question/commit/e00bcb54c99e0144ff0bfdc2249bfeef350ac413))
+
+### What's Changed
+* Clarify compatibility and release guidance by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/50
+* Automate reviewed npm patch releases by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/51
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.1...v0.6.2
 
 ## 0.6.1 — 2026-10-31
 
