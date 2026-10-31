@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Keep preceding conversation text visible above TUI questions and let users read the transcript without cancelling or losing their answer.
 - Let cooperative observers query a current TUI question after attachment, including its original deadline and runtime owner, and reconcile accepted answer IDs after a lost result without reapplying them.
 - Rewrite the README for human readers, add a question-flow diagram, and move API and maintainer details into linked guides.
 - Add a cooperative `pi.events` bridge for exact, correlated answers to live TUI questions, with receipts after applying the existing answer state.

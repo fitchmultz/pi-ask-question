@@ -34,6 +34,7 @@ function fakeHarness() {
     ui: {
       theme,
       setStatus: (key: string, text: string | undefined) => statuses.push({ key, text }),
+      setWidget() {},
       notify: (message: string, type?: string) => notifications.push({ message, type }),
       select: async (title: string, options: string[], opts?: { signal?: AbortSignal }) => {
         dialogCalls.push({ method: "select", title, options, signal: opts?.signal });
@@ -44,7 +45,7 @@ function fakeHarness() {
         return inputs.shift();
       },
       custom: (factory: any, options?: { onHandle?: (handle: unknown) => void }) => new Promise((resolve) => {
-        customComponent = factory({ requestRender() {}, terminal }, theme, getKeybindings(), (value: unknown) => {
+        customComponent = factory({ requestRender() {}, addInputListener: () => () => {}, terminal }, theme, getKeybindings(), (value: unknown) => {
           customDoneCalls += 1;
           resolve(value);
         });

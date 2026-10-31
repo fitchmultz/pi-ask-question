@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, sliceByColumn, Text, truncateToWidth, visibleWidth, wrapTextWithAnsi, type AutocompleteItem, type Keybinding, type OverlayHandle, type TuiMouseEvent } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createQuestionObserver, type QuestionObserver } from "./lib/question-observer.ts";
 
@@ -183,7 +183,14 @@ async function askWithKeyboard(
   const promptId = randomUUID();
   let disposeBridge = () => {};
   let announceBridge = () => {};
+  let overlayHandle: OverlayHandle | undefined;
   return ui.custom<{ answers: Answer[]; cancelled: boolean }>((tui, theme, keys, done) => {
+    let reservedRows = 0;
+    const widgetKey = `ask-question.${promptId}`;
+    ui.setWidget(widgetKey, () => ({
+      render: () => Array(reservedRows).fill(""),
+      invalidate() {},
+    }));
     const answers = new Map<string, Answer>();
     const multiAnswers = new Map<string, Set<string>>();
     const customAnswers = new Map<string, string>();
@@ -215,6 +222,10 @@ async function askWithKeyboard(
     let reviewScroll: number | undefined;
     let reviewPageRows = 0;
     let maxReviewScroll = 0;
+    let readingContext = false;
+    let contextHintStart = 0;
+    let contextHintEnd = 0;
+    let contextHintWidth = 0;
 
     const submitTab = questions.length;
     const showTabs = questions.length > 1 || questions.some((question) => question.multiSelect);
@@ -226,6 +237,24 @@ async function askWithKeyboard(
       cachedLines = undefined;
       tui.requestRender();
     };
+    const toggleContext = () => {
+      if (!overlayHandle) return;
+      readingContext = !readingContext;
+      if (readingContext) {
+        reservedRows = 0;
+        overlayHandle.unfocus({ target: null });
+      } else {
+        overlayHandle.focus();
+      }
+      refresh();
+    };
+    const unsubscribeInput = tui.addInputListener((data) => {
+      if (matchesKey(data, Key.ctrl("o")) && (readingContext || overlayHandle?.isFocused())) {
+        toggleContext();
+        return { consume: true };
+      }
+      return undefined;
+    });
     let finished = false;
     let revision = 0;
     let publishQueued = false;
@@ -262,6 +291,7 @@ async function askWithKeyboard(
     }
     const finish = (cancelled: boolean) => {
       if (finished) return;
+      if (readingContext) overlayHandle?.focus();
       disposeBridge();
       done({ answers: orderedAnswers(questions, answers), cancelled });
     };
@@ -319,6 +349,8 @@ async function askWithKeyboard(
       unwatch();
       unsubscribeAnswer();
       unsubscribeShutdown();
+      unsubscribeInput();
+      ui.setWidget(widgetKey, undefined);
       publishState();
     };
     signal?.addEventListener("abort", abort, { once: true });
@@ -520,6 +552,13 @@ async function askWithKeyboard(
     }
 
     function render(width: number): string[] {
+      if (readingContext) {
+        const hint = truncateToWidth("ctrl+o return to question • scroll conversation", width, "…");
+        contextHintStart = 0;
+        contextHintEnd = 1;
+        contextHintWidth = visibleWidth(hint);
+        return [theme.fg("dim", hint)];
+      }
       const height = tui.terminal.rows;
       if (cachedLines && cachedWidth === width && cachedHeight === height) return cachedLines;
       if (cachedWidth !== width) {
@@ -644,7 +683,8 @@ async function askWithKeyboard(
             : `${keyText("tui.select.up")}/${keyText("tui.select.down")} options • ${keyText("tui.select.confirm")} select • ${keyText("tui.select.cancel")} cancel`,
         { style: (text) => theme.fg("dim", text) },
       );
-      add(border);
+      const contextHint = truncateToWidth("ctrl+o read context", width, "…");
+      add(`${theme.fg("dim", contextHint)}${theme.fg("accent", "─".repeat(Math.max(0, width - visibleWidth(contextHint))))}`);
 
       if (tab !== submitTab) {
         const questionLines = lines.slice(questionStart, questionEnd);
@@ -714,6 +754,13 @@ async function askWithKeyboard(
       cachedWidth = width;
       cachedHeight = height;
       cachedLines = lines;
+      contextHintStart = lines.length - 1;
+      contextHintEnd = lines.length;
+      contextHintWidth = visibleWidth(contextHint);
+      if (reservedRows !== lines.length) {
+        reservedRows = lines.length;
+        tui.requestRender();
+      }
       return lines;
     }
 
@@ -727,13 +774,25 @@ async function askWithKeyboard(
       },
       render,
       handleInput,
+      handleMouse(event: TuiMouseEvent) {
+        if (event.type === "click" && event.button === "left" &&
+            event.y >= contextHintStart && event.y < contextHintEnd &&
+            event.x < contextHintWidth) {
+          toggleContext();
+          return { handled: true };
+        }
+        return undefined;
+      },
       invalidate: () => { cachedLines = undefined; },
       dispose: () => finish(true),
     };
   }, {
     overlay: true,
     overlayOptions: { width: "100%", maxHeight: "100%", anchor: "bottom-center" },
-    onHandle: () => announceBridge(),
+    onHandle: (handle) => {
+      overlayHandle = handle;
+      announceBridge();
+    },
   }).finally(() => disposeBridge());
 }
 

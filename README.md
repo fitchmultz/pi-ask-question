@@ -27,6 +27,8 @@ Select a choice or select **Type a custom answer**. Multi-select questions let y
 
 Use Up/Down to move between choices. Press Enter to answer. For multi-select questions, press Space to change selected choices. Submit question sets and multi-select answers from the final review.
 
+Press Ctrl+O to read the conversation, then press it again to return to the question. Your current answer stays in place.
+
 Escape leaves the custom answer editor; otherwise, it cancels the question. Your editor draft stays unchanged. See [terminal controls](docs/reference.md#terminal-controls) for question navigation, long text, and custom bindings.
 
 ## Limits

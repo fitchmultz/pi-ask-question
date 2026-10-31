@@ -76,7 +76,8 @@ The configured selection-cancel binding cancels the question and reports cancell
 
 - `ask_question` uses its full keyboard UI in TUI mode and sequential Pi dialogs in RPC mode.
 - RPC multi-select dialogs mark selected choices with ☑ and unselected choices with ☐. Choose a checked choice again to remove it, including a custom answer.
-- TUI questions appear over the current screen, temporarily covering the footer and widgets while preserving the editor draft. Long lists scroll by complete wrapped choices with Up/Down.
+- TUI questions reserve space above the dialog for preceding conversation text. The dialog covers the footer and widgets while preserving the editor draft. Long lists scroll by complete wrapped choices with Up/Down.
+- Ctrl+O switches between the question and a conversation view without losing your selection or custom answer draft. In fullscreen, PageUp/PageDown scroll the conversation. In regular mode, use your terminal's scrollback. The five-minute deadline continues while you read.
 - PageUp/PageDown let you read a question, choice, or answer review longer than the screen. Shift+PageUp/Shift+PageDown also work in fullscreen.
 - While typing a custom answer, the list shows only that choice; Escape returns to the list. Shift+PageUp/Shift+PageDown can scroll a long question while editing.
 - Saved answers have a one-line preview while choosing; the review retains their full text.
@@ -85,7 +86,7 @@ The configured selection-cancel binding cancels the question and reports cancell
 
 ### Terminal controls
 
-These are the default controls; the UI shows your configured bindings.
+These are the default controls. The UI shows your configured bindings, except for Ctrl+O.
 
 | Action | Control |
 | --- | --- |
@@ -95,6 +96,7 @@ These are the default controls; the UI shows your configured bindings.
 | Move on after selecting at least one multi-select answer | Enter |
 | Switch between questions and the final review (question sets and multi-select) | Left/Right or Tab; Shift+Tab moves back |
 | Submit from the final review | Enter |
+| Read the conversation or return to the question | Ctrl+O |
 | Read long questions, choices, or reviews | PageUp/PageDown; Shift+PageUp/Shift+PageDown in fullscreen |
 | Read a long question while editing a custom answer | Shift+PageUp/Shift+PageDown |
 | Cancel the question, or return from a custom-answer edit to the choices | Escape |
