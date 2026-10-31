@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-10-31
 
 - Disable the AFK timeout after TUI interaction or a submitted RPC choice, so an in-progress answer remains open.
 
