@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.1 — 2026-10-31
+
+- Clarify compatibility and release guidance and remove outdated Git-only advice for the cooperative question bridge.
+
 ## 0.6.0 — 2026-10-31
 
 - Keep preceding conversation text visible above TUI questions and let users read the transcript without cancelling or losing their answer.
