@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-10-31
 
 - Keep preceding conversation text visible above TUI questions and let users read the transcript without cancelling or losing their answer.
 - Let cooperative observers query a current TUI question after attachment, including its original deadline and runtime owner, and reconcile accepted answer IDs after a lost result without reapplying them.
