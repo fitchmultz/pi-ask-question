@@ -151,6 +151,96 @@ test("native ask UI answers and cancels without consuming the main editor draft"
       }
     });
 
+    for (const tuiMode of ["fullscreen", "regular"] as const) {
+      await t.test(`${tuiMode} keeps the preceding context visible while answering`, async () => {
+        terminal.resize(24);
+        assert.equal(switchMode(tuiMode), true);
+        ui.setEditorText("untouched context draft");
+        await runtime.session.sendCustomMessage({
+          customType: "test-context",
+          content: [...Array.from({ length: 20 }, (_, index) => `Context detail ${index + 1}.`), "Final detail needed for the decision."].join("\n"),
+          display: true,
+        });
+        await nextRender();
+        assert.ok(viewport().some((line) => line.includes("Final detail needed for the decision.")));
+
+        const controller = new AbortController();
+        const execution = tool.execute("native-context", {
+          question: "Which option?", options: ["First", "Second", "Third"],
+        }, controller.signal);
+        try {
+          await nextRender();
+          const rows = viewport();
+          assert.ok(rows.some((line) => line.includes("Which option?")), "The question is visible");
+          assert.ok(rows.some((line) => line.includes("Final detail needed for the decision.")), "The preceding context is visible");
+          terminal.send("\x0f");
+          await nextRender();
+          assert.ok(viewport().some((line) => line.includes("return to question")), "The context view explains how to return");
+          assert.ok(viewport().some((line) => line.includes("Final detail needed for the decision.")));
+          if (tuiMode === "fullscreen") {
+            terminal.send("\x1b[5~");
+            await nextRender();
+            assert.ok(viewport().some((line) => line.includes("Context detail 1.")), "PageUp reads earlier context");
+          }
+          terminal.send("?");
+          assert.equal(ui.getEditorText(), "untouched context draft");
+          terminal.send("\x0f");
+          await nextRender();
+          assert.ok(viewport().some((line) => line.includes("Which option?")), "The question returns without cancelling");
+          if (tuiMode === "fullscreen") {
+            const hintRow = viewport().findIndex((line) => line.includes("ctrl+o read context")) + 1;
+            assert.ok(hintRow > 0);
+            const click = (column: number, row: number) => {
+              terminal.send(`\x1b[<0;${column};${row}M`);
+              terminal.send(`\x1b[<0;${column};${row}m`);
+            };
+            click(terminal.columns, hintRow);
+            await nextRender();
+            assert.ok(viewport().some((line) => line.includes("Which option?")), "The border does not activate the hint");
+            click(1, hintRow);
+            await nextRender();
+            const returnRow = viewport().findIndex((line) => line.includes("return to question")) + 1;
+            assert.ok(returnRow > 0, "Clicking the hint opens the context");
+            click(1, returnRow);
+            await nextRender();
+            assert.ok(viewport().some((line) => line.includes("Which option?")), "Clicking the return hint restores the question");
+          }
+          terminal.send("\r");
+          const result = await execution;
+          assert.equal((result.details as { answers: { answer: string }[] }).answers[0]?.answer, "First");
+        } finally {
+          controller.abort();
+          await execution;
+          terminal.resize(40);
+        }
+      });
+    }
+
+    for (const tuiMode of ["fullscreen", "regular"] as const) {
+      await t.test(`${tuiMode} restores editor input when a question closes in context view`, async () => {
+        terminal.resize(24);
+        assert.equal(switchMode(tuiMode), true);
+        ui.setEditorText("saved draft");
+        const controller = new AbortController();
+        const execution = tool.execute("native-context-abort", { question: "Continue?" }, controller.signal);
+        try {
+          await nextRender();
+          terminal.send("\x0f");
+          await nextRender();
+          assert.ok(viewport().some((line) => line.includes("return to question")));
+          controller.abort();
+          const result = await execution;
+          assert.equal((result.details as { cancelled: boolean }).cancelled, true);
+          terminal.send("!");
+          assert.equal(ui.getEditorText(), "saved draft!");
+        } finally {
+          controller.abort();
+          await execution;
+          terminal.resize(40);
+        }
+      });
+    }
+
     for (const [tuiMode, action] of (["fullscreen", "regular"] as const).flatMap(
       (mode) => (["answer", "escape", "abort"] as const).map((action) => [mode, action] as const),
     )) {
@@ -425,7 +515,14 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         assert.ok(rows.some((line) => line.includes(">") && line.includes("Type a custom answer")), "Selected custom choice stays visible");
         assert.ok(rows.some((line) => line.includes("Your answer:")), "Editor label stays visible");
         assert.ok(rows.some((line) => line.includes("EDIT-END-MARKER")), "The editor's active line and caret stay on screen");
+        assert.ok(rows.some((line) => line.includes("ctrl+o read context")), "The context control stays visible");
 
+        terminal.send("\x0f");
+        await nextRender();
+        assert.ok(viewport().some((line) => line.includes("return to question")));
+        terminal.send("\x0f");
+        await nextRender();
+        assert.ok(viewport().some((line) => line.includes("EDIT-END-MARKER")), "Reading context preserves the custom answer draft");
         terminal.send("\r");
         terminal.send("\x1b[C");
         terminal.send("\r");
