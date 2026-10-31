@@ -10,6 +10,7 @@ type Target = {
 
 type Waiting = Target & {
   status: "waiting";
+  timeoutActive: boolean;
   question: string;
   options: string[];
   multiSelect: boolean;

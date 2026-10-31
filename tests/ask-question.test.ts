@@ -610,33 +610,67 @@ test("ask_question returns the AFK reply at exactly five minutes without choosin
   assert.equal(harness.getCustomDoneCalls(), 1);
 });
 
-test("ask_question preserves saved TUI answers and multi-select choices but not unfinished typing", async (t) => {
+test("interaction keeps a question set open beyond five minutes without affecting the next call", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const harness = fakeHarness();
+  const controller = new AbortController();
   const execution = harness.tools.get("ask_question").execute("partial", {
     questions: [
       { question: "First?", options: ["A"] },
       { question: "Second?", options: ["B"], multiSelect: true },
     ],
-  }, undefined, undefined, harness.ctx);
+  }, controller.signal, undefined, harness.ctx);
   const component = harness.getCustomComponent();
-  t.mock.timers.tick(200_000);
-  component.handleInput("\r");
-  component.handleInput(" ");
-  component.handleInput("\u001b[B");
-  component.handleInput("\r");
-  component.handleInput("Unfinished draft");
-  t.mock.timers.tick(100_000);
-  assert.equal(harness.getCustomDoneCalls(), 1);
-  const result = await execution;
+  try {
+    t.mock.timers.tick(200_000);
+    component.handleInput("\r");
+    component.handleInput(" ");
+    component.handleInput("\u001b[B");
+    component.handleInput("\r");
+    component.handleInput("A lengthy draft");
+    t.mock.timers.tick(400_000);
+    assert.equal(harness.getCustomDoneCalls(), 0, "Typing and earlier choices must prevent an AFK result");
+    component.handleInput("\r");
+    component.handleInput("\u001b[C");
+    component.handleInput("\r");
+    const result = await execution;
+    assert.equal(result.details.timedOut, false);
+    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["A", "B, A lengthy draft"]);
+    assert.deepEqual(result.details.answers[1].selectedOptions, ["B", "A lengthy draft"]);
+  } finally {
+    controller.abort();
+    await execution;
+  }
 
-  assert.equal(result.details.timedOut, true);
-  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["A", "B"]);
-  assert.match(result.content[0].text, /Answers already provided:\n- question_1: A\n- question_2: \["B"\]/);
-  assert.doesNotMatch(result.content[0].text, /Unfinished draft/);
+  const next = harness.tools.get("ask_question").execute("next", { question: "Another question?" }, undefined, undefined, harness.ctx);
+  t.mock.timers.tick(300_000);
+  assert.equal((await next).details.timedOut, true, "A new untouched question still times out");
 });
 
-test("ask_question shares one RPC timeout across custom input and multi-select dialogs", async (t) => {
+test("a mouse interaction keeps the question open", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const type of ["press", "move"]) {
+    const harness = fakeHarness();
+    const controller = new AbortController();
+    const execution = harness.tools.get("ask_question").execute(
+      "mouse", { question: "Choose?", options: ["A"] }, controller.signal, undefined, harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    try {
+      component.handleMouse({ type, button: type === "press" ? "left" : "none", x: 2, y: 2 });
+      t.mock.timers.tick(300_000);
+      assert.equal(harness.getCustomDoneCalls(), 0);
+      assert.match(component.render(80).join("\n"), /No time limit while you answer/);
+      component.handleInput("\r");
+      assert.equal((await execution).details.answers[0].answer, "A");
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  }
+});
+
+test("RPC choices keep later dialogs open past the original timeout", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const harness = fakeHarness();
   harness.setMode("rpc");
@@ -657,53 +691,49 @@ test("ask_question shares one RPC timeout across custom input and multi-select d
     t.mock.timers.tick(50_000);
     return input(...args);
   };
+  const controller = new AbortController();
   const execution = harness.tools.get("ask_question").execute("rpc-partial", {
     questions: [{ question: "First?" }, { question: "Second?", options: ["B", "C"], multiSelect: true }],
-  }, new AbortController().signal, undefined, harness.ctx);
-  await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.ok(pendingSignal);
-  t.mock.timers.tick(9_999);
-  assert.equal(pendingSignal.aborted, false);
-  t.mock.timers.tick(1);
-  assert.equal(pendingSignal.aborted, true);
-  const result = await execution;
-
-  assert.equal(result.details.timedOut, true);
-  assert.equal(result.details.cancelled, false);
-  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Typed answer", "B"]);
-  assert.equal(getEventListeners(pendingSignal, "abort").length, 0);
+  }, controller.signal, undefined, harness.ctx);
+  try {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.ok(pendingSignal);
+    t.mock.timers.tick(130_000);
+    assert.equal(pendingSignal.aborted, false);
+  } finally {
+    controller.abort();
+    const result = await execution;
+    assert.equal(result.details.cancelled, true);
+    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Typed answer", "B"]);
+    assert.equal(getEventListeners(pendingSignal!, "abort").length, 0);
+  }
 });
 
-test("ask_question times out RPC custom input and lets caller cancellation take precedence", async (t) => {
+test("RPC custom answer selection disables timeout and caller cancellation still works", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  for (const cancel of [false, true]) {
-    const harness = fakeHarness();
-    harness.setMode("rpc");
-    harness.selections.push("Type a custom answer");
-    let pendingSignal: AbortSignal | undefined;
-    harness.ctx.ui.input = async (...args) => {
-      pendingSignal = args[2]?.signal;
-      return pendingDialog(...args);
-    };
-    const controller = new AbortController();
-    const execution = harness.tools.get("ask_question").execute("rpc-input", { question: "Details?" }, controller.signal, undefined, harness.ctx);
+  const harness = fakeHarness();
+  harness.setMode("rpc");
+  harness.selections.push("Type a custom answer");
+  let pendingSignal: AbortSignal | undefined;
+  harness.ctx.ui.input = async (...args) => {
+    pendingSignal = args[2]?.signal;
+    return pendingDialog(...args);
+  };
+  const controller = new AbortController();
+  const execution = harness.tools.get("ask_question").execute("rpc-input", { question: "Details?" }, controller.signal, undefined, harness.ctx);
+  try {
     await new Promise<void>((resolve) => setImmediate(resolve));
     t.mock.timers.tick(300_000);
-    assert.equal(pendingSignal?.aborted, true);
-    if (cancel) controller.abort();
+    assert.equal(pendingSignal?.aborted, false, "An open custom answer must not time out");
+  } finally {
+    controller.abort();
     const result = await execution;
-
-    assert.equal(result.details.timedOut, !cancel);
-    assert.equal(result.details.cancelled, cancel);
-    assert.deepEqual(result.details.answers, []);
-    if (cancel) assert.equal(result.content[0].text, "User cancelled the question.");
-    else assert.match(result.content[0].text, /Mitch is currently AFK/);
+    assert.equal(result.details.cancelled, true);
   }
 });
 
 test("ask_question clears its timer after an answer, cancellation, or UI error", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
-  const clearTimer = t.mock.method(globalThis, "clearTimeout");
   for (const key of ["\r", "\u001b"]) {
     const harness = fakeHarness();
     const execution = harness.tools.get("ask_question").execute("early", { question: "Choose?", options: ["A"] }, undefined, undefined, harness.ctx);
@@ -717,7 +747,6 @@ test("ask_question clears its timer after an answer, cancellation, or UI error",
   const harness = fakeHarness();
   harness.ctx.ui.custom = async () => { throw new Error("UI failed"); };
   await assert.rejects(harness.tools.get("ask_question").execute("error", { question: "Choose?" }, undefined, undefined, harness.ctx), /UI failed/);
-  assert.equal(clearTimer.mock.callCount(), 3);
 });
 
 function remoteHarness() {
@@ -736,7 +765,45 @@ function remoteHarness() {
   return { ...harness, states, receipts, start, reply };
 }
 
+test("navigation keeps the cooperative question answerable after its original deadline", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
+  const harness = remoteHarness();
+  const controller = new AbortController();
+  const snapshots: any[] = [];
+  harness.events.on("pi-ask-question:snapshot", (value) => snapshots.push(value));
+  const execution = harness.start({ question: "Choose?", options: ["A", "B"] }, controller.signal);
+  try {
+    const initial = harness.states.at(-1);
+    assert.equal(initial.timeoutActive, true);
+    harness.getCustomComponent().handleInput("\u001b[B");
+    t.mock.timers.tick(300_000);
+    harness.events.emit("pi-ask-question:query", { queryId: "after-interaction", protocolVersion: 1 });
+    const waiting = snapshots.at(-1);
+    assert.equal(waiting.status, "waiting");
+    assert.equal(waiting.timeoutActive, false);
+    assert.equal(waiting.deadline, initial.deadline);
+    harness.events.emit("pi-ask-question:answer", { ...waiting, requestId: "late-answer", answer: "B" });
+    assert.equal(harness.receipts.at(-1).status, "answered");
+    assert.equal((await execution).details.answers[0].answer, "B");
+  } finally {
+    controller.abort();
+    await execution;
+  }
+});
+
 const flushState = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("an untouched expired target rejects a remote answer before the timeout callback runs", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
+  const harness = remoteHarness();
+  const execution = harness.start({ question: "Choose?" });
+  const target = harness.states.at(-1);
+  t.mock.timers.setTime(target.deadline);
+  harness.reply(target, "too late");
+  assert.equal(harness.receipts.at(-1).status, "stale");
+  t.mock.timers.tick(300_000);
+  assert.equal((await execution).details.timedOut, true);
+});
 
 test("a late observer reads the true current target and looks up a lost accepted result without replay", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
@@ -939,28 +1006,30 @@ test("local custom editing withdraws the remote target and preserves its draft a
   assert.equal((await execution).details.answers[0].answer, "local final");
 });
 
-test("remote progression retains the single five-minute deadline and saved answers on timeout", async (t) => {
+test("an accepted remote answer disables timeout for the rest of the question set", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
   const harness = remoteHarness();
-  const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] });
-  t.mock.timers.tick(200_000);
-  harness.reply(harness.states.at(-1), "saved");
-  await flushState();
-  const target = harness.states.at(-1);
-  assert.equal(target.deadline, 301_000);
-  t.mock.timers.tick(99_999);
-  assert.equal(harness.getCustomDoneCalls(), 0);
-  t.mock.timers.setTime(target.deadline);
-  harness.reply(target, "deadline passed before timeout callback", "expired");
-  assert.equal(harness.receipts.at(-1).status, "stale");
-  t.mock.timers.tick(1);
-  harness.reply(target, "too late");
-  const result = await execution;
-  assert.equal(result.details.timedOut, true);
-  assert.equal(result.details.cancelled, false);
-  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["saved"]);
-  assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
-  assert.equal(harness.getCustomDoneCalls(), 1);
+  const controller = new AbortController();
+  const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] }, controller.signal);
+  try {
+    t.mock.timers.tick(200_000);
+    harness.reply(harness.states.at(-1), "saved");
+    await flushState();
+    const target = harness.states.at(-1);
+    assert.equal(target.deadline, 301_000);
+    assert.equal(target.timeoutActive, false);
+    t.mock.timers.tick(100_000);
+    assert.equal(harness.getCustomDoneCalls(), 0);
+    harness.reply(target, "second answer", "after-deadline");
+    assert.equal(harness.receipts.at(-1).status, "answered");
+    const result = await execution;
+    assert.equal(result.details.timedOut, false);
+    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["saved", "second answer"]);
+    assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
+  } finally {
+    controller.abort();
+    await execution;
+  }
 });
 
 test("abort, component disposal and shutdown/reload dispose live answer subscriptions idempotently", async () => {
