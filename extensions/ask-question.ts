@@ -39,6 +39,12 @@ type GrillMeState = {
 
 type GrillMeAction = "toggle" | "enable" | "disable" | "status" | "invalid";
 
+type QuestionTimeout = {
+  deadline: number;
+  readonly active: boolean;
+  stop(): boolean;
+};
+
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
 const TIMEOUT_MESSAGE = "Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.";
 const CUSTOM_OPTION = "Type a custom answer";
@@ -176,7 +182,7 @@ async function askWithKeyboard(
   ui: ExtensionContext["ui"],
   pi: ExtensionAPI,
   observer: QuestionObserver,
-  deadline: number,
+  timeout: QuestionTimeout,
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   if (signal?.aborted) return { answers: [], cancelled: true };
@@ -250,6 +256,7 @@ async function askWithKeyboard(
     };
     const unsubscribeInput = tui.addInputListener((data) => {
       if (matchesKey(data, Key.ctrl("o")) && (readingContext || overlayHandle?.isFocused())) {
+        markInteraction();
         toggleContext();
         return { consume: true };
       }
@@ -263,9 +270,11 @@ async function askWithKeyboard(
     const acceptedRequests = new Set<string>();
     function waitingState() {
       const question = current();
-      if (!announced || finished || signal?.aborted || editing || !question || Date.now() >= deadline) return undefined;
+      if (!announced || finished || signal?.aborted || editing || !question ||
+          (timeout.active && Date.now() >= timeout.deadline)) return undefined;
       return {
-        status: "waiting" as const, ...observer.identity(), promptId, questionId: question.id, revision, deadline,
+        status: "waiting" as const, ...observer.identity(), promptId, questionId: question.id, revision,
+        deadline: timeout.deadline, timeoutActive: timeout.active,
         question: question.question, options: [...question.options], multiSelect: question.multiSelect,
       };
     }
@@ -279,6 +288,11 @@ async function askWithKeyboard(
       }
       closed = false;
       pi.events.emit("pi-ask-question:state", waiting);
+    }
+    function markInteraction() {
+      if (!timeout.stop()) return;
+      refresh();
+      publishState();
     }
     function stateChanged() {
       revision += 1;
@@ -307,7 +321,7 @@ async function askWithKeyboard(
       const question = current();
       if (finished || signal?.aborted || editing || !question || request.questionId !== question.id ||
           request.revision !== revision || acceptedRequests.has(request.requestId) ||
-          !observer.matches(request, deadline) || Date.now() >= deadline) {
+          !observer.matches(request, timeout.deadline) || (timeout.active && Date.now() >= timeout.deadline)) {
         receipt("stale");
         return;
       }
@@ -322,8 +336,9 @@ async function askWithKeyboard(
         receipt("invalid");
         return;
       }
-      const target = { promptId, questionId: question.id, revision, deadline };
+      const target = { promptId, questionId: question.id, revision, deadline: timeout.deadline };
       acceptedRequests.add(request.requestId);
+      timeout.stop();
       if (typeof answer === "string") {
         if (question.multiSelect) {
           saveMultiCustomAnswer(question, answer.trim());
@@ -462,6 +477,7 @@ async function askWithKeyboard(
 
     function handleInput(data: string) {
       if (finished) return;
+      markInteraction();
       if (editing) {
         if (maxQuestionScroll && matchesKey(data, Key.shift("pageUp"))) {
           questionScroll = Math.max(0, questionScroll - Math.max(1, questionPageRows - 1));
@@ -674,7 +690,9 @@ async function askWithKeyboard(
       }
 
       if (!editing) add();
-      addWrapped("Auto-continues after 5 minutes with an AFK reply.", { style: (text) => theme.fg("dim", text) });
+      addWrapped(timeout.active ? "Auto-continues after 5 minutes without interaction." : "No time limit while you answer.", {
+        style: (text) => theme.fg("dim", text),
+      });
       addWrapped(
         editing
           ? `${keyText("tui.input.submit")} save answer • ${keyText("tui.select.cancel")} cancel edit`
@@ -775,6 +793,7 @@ async function askWithKeyboard(
       render,
       handleInput,
       handleMouse(event: TuiMouseEvent) {
+        markInteraction();
         if (event.type === "click" && event.button === "left" &&
             event.y >= contextHintStart && event.y < contextHintEnd &&
             event.x < contextHintWidth) {
@@ -799,6 +818,7 @@ async function askWithKeyboard(
 async function askWithDialogs(
   questions: NormalizedQuestion[],
   ui: ExtensionContext["ui"],
+  timeout: QuestionTimeout,
   signal?: AbortSignal,
 ): Promise<{ answers: Answer[]; cancelled: boolean }> {
   const answers = new Map<string, Answer>();
@@ -818,6 +838,7 @@ async function askWithDialogs(
       if (question.multiSelect && selected.length) choices.push(doneOption);
       const choice = await ui.select(question.question, choices, { signal });
       if (choice === undefined) return { answers: orderedAnswers(questions, answers), cancelled: true };
+      timeout.stop();
       if (choice === doneOption) break;
 
       let answer = options[labels.indexOf(choice)] ?? choice;
@@ -888,7 +909,7 @@ function restoreGrillMeState(entries: Iterable<unknown>): boolean {
 const askQuestionTool = (pi: ExtensionAPI, observer: QuestionObserver) => defineTool({
   name: "ask_question",
   label: "Ask Question",
-  description: "Ask the user one or more clarifying questions through pi's UI. After 5 minutes, returns an AFK reply so you can continue using your best judgement.",
+  description: "Ask the user one or more clarifying questions through pi's UI. After 5 minutes without interaction, returns an AFK reply so you can continue using your best judgement.",
   promptSnippet: "Ask the user clarifying questions through pi's UI",
   promptGuidelines: [
     "For ask_question, list options from most recommended to least; the first option is the recommended choice, and do not label it as recommended.",
@@ -904,16 +925,27 @@ const askQuestionTool = (pi: ExtensionAPI, observer: QuestionObserver) => define
     if (!ctx.hasUI) throw new Error("ask_question needs Pi TUI or RPC UI support.");
 
     observer.identify(ctx);
-    const timeout = new AbortController();
+    const timeoutController = new AbortController();
     const deadline = Date.now() + QUESTION_TIMEOUT_MS;
-    const timer = setTimeout(() => timeout.abort(), QUESTION_TIMEOUT_MS);
-    const questionSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
+    const timer = setTimeout(() => timeoutController.abort(), QUESTION_TIMEOUT_MS);
+    let active = true;
+    const timeout: QuestionTimeout = {
+      deadline,
+      get active() { return active; },
+      stop() {
+        if (!active) return false;
+        active = false;
+        clearTimeout(timer);
+        return true;
+      },
+    };
+    const questionSignal = signal ? AbortSignal.any([signal, timeoutController.signal]) : timeoutController.signal;
     try {
       const result = ctx.mode === "tui"
-        ? await askWithKeyboard(questions, ctx.ui, pi, observer, deadline, questionSignal)
-        : await askWithDialogs(questions, ctx.ui, questionSignal);
+        ? await askWithKeyboard(questions, ctx.ui, pi, observer, timeout, questionSignal)
+        : await askWithDialogs(questions, ctx.ui, timeout, questionSignal);
       const answers = new Map(result.answers.map((answer) => [answer.id, answer]));
-      const timedOut = result.cancelled && timeout.signal.aborted && !signal?.aborted;
+      const timedOut = result.cancelled && timeoutController.signal.aborted && !signal?.aborted;
       const cancelled = result.cancelled && !timedOut;
 
       return {

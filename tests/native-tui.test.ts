@@ -350,6 +350,42 @@ test("native ask UI answers and cancels without consuming the main editor draft"
 
     for (const tuiMode of ["fullscreen", "regular"] as const) {
       switchMode(tuiMode);
+      await t.test(`${tuiMode} preserves typed answers past the original deadline`, async (t) => {
+        let now = Date.now();
+        t.mock.method(Date, "now", () => now);
+        const controller = new AbortController();
+        const snapshots: any[] = [];
+        const unsubscribe = events!.on("pi-ask-question:snapshot", (state) => { snapshots.push(state); });
+        const execution = tool.execute("native-timeout", {
+          questions: [{ question: "Details?" }, { question: "Next?", options: ["Continue"] }],
+        }, controller.signal);
+        try {
+          await nextRender();
+          terminal.send("\r");
+          terminal.send("A lengthy answer");
+          await nextRender();
+          assert.ok(viewport().some((line) => line.includes("No time limit while you answer.")));
+          now += 300_001;
+          terminal.send("\r");
+          await nextRender();
+          events!.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "after-typing" });
+          assert.equal(snapshots.at(-1).status, "waiting");
+          assert.equal(snapshots.at(-1).timeoutActive, false);
+          terminal.send("\r");
+          terminal.send("\r");
+          const details = (await execution).details as { timedOut: boolean; answers: { answer: string }[] };
+          assert.equal(details.timedOut, false);
+          assert.deepEqual(details.answers.map((answer) => answer.answer), ["A lengthy answer", "Continue"]);
+        } finally {
+          controller.abort();
+          await execution;
+          unsubscribe();
+        }
+      });
+    }
+
+    for (const tuiMode of ["fullscreen", "regular"] as const) {
+      switchMode(tuiMode);
       await t.test(`${tuiMode} long choices stay visible with a below-editor widget and height-only resize`, async () => {
         ui.setEditorText("untouched draft");
         ui.setStatus("native-test", "footer status");
@@ -470,7 +506,7 @@ test("native ask UI answers and cancels without consuming the main editor draft"
         assert.ok(viewport().some((line) => line.includes("First question?")), "Question remains visible after a long saved answer");
         assert.ok(viewport().some((line) => line.includes(">") && line.includes("Recommended")), "Current highlighted choice remains visible");
         assert.ok(viewport().some((line) => line.includes("Current answer:") && line.includes("…")), "Saved answer is previewed on one line");
-        assert.ok(viewport().some((line) => line.includes("Auto-continues after 5 minutes")), "Help remains visible after revisiting");
+        assert.ok(viewport().some((line) => line.includes("No time limit while you answer.")), "Help remains visible after revisiting");
 
         terminal.send("\x1b[C");
         terminal.send("\r");

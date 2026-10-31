@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Disable the AFK timeout after TUI interaction or a submitted RPC choice, so an in-progress answer remains open.
+
 ## 0.6.0 — 2026-10-31
 
 - Keep preceding conversation text visible above TUI questions and let users read the transcript without cancelling or losing their answer.
