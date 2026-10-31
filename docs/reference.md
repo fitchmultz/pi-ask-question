@@ -4,6 +4,8 @@
 
 ## Installation and updates
 
+Requires Pi 1.0.0 or newer and Node.js 24 or newer.
+
 The owned npm package is `@fitchmultz/pi-ask-question`:
 
 ```bash
@@ -124,8 +126,6 @@ When enabled, the footer shows subtle `grill-mode` text. The agent is told to wa
 The setting is saved in the current session branch and survives `/reload`. The footer status is cleared when disabled.
 
 ## Cooperative TUI answers
-
-This bridge is currently listed under [Unreleased in the changelog](../CHANGELOG.md#unreleased). Use the Git source to work with it before the next npm release.
 
 Trusted extensions can observe and answer the **live TUI** question through the shared `pi.events` bus. This does not open a socket, start a process, queue model input, or simulate keyboard/focus actions. RPC clients continue using Pi's extension UI response protocol; other extensions' dialogs are not remotely answerable through this bridge.
 

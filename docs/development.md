@@ -39,9 +39,9 @@ Shared automation selects each host's actual SDK and companion dependency graph;
 
 ## Publishing
 
-The main-only [`npm-release.yml`](../.github/workflows/npm-release.yml) pipeline publishes intentional stable version bumps with nonempty versioned changelog notes only after both frozen host qualifications pass. Publishing stays off unless the repository variable `NPM_RELEASE_ENABLED` is `true`; release planning and publishing use the same host inputs.
+The main-only [`npm-release.yml`](../.github/workflows/npm-release.yml) pipeline publishes matching npm and GitHub releases after both frozen host qualifications pass. Publishing stays off unless the repository variable `NPM_RELEASE_ENABLED` is `true`; release planning and publishing use the same host inputs.
 
-A documentation-only change does not need a new package release. The package file allowlist excludes `docs/` and `.github/readme/`; the diagram source and PNG stay in the repository.
+The package file allowlist excludes `docs/` and `.github/readme/`; the diagram source and PNG stay in the repository.
 
 ## README diagram
 

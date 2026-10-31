@@ -6,7 +6,7 @@ This [Pi](https://github.com/earendil-works/pi) extension asks for your decision
 
 ## Install
 
-Requires Pi 1.0.0+ and Node.js 24+. Supports official Pi releases and Mitch's Pi fork.
+Requires Node.js and a supported Pi release. See the [compatibility requirements](https://github.com/fitchmultz/pi-ask-question/blob/main/docs/reference.md#installation-and-updates). Official Pi releases and Mitch's Pi fork are supported.
 
 Run these commands:
 
