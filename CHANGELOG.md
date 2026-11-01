@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.4 - 2026-11-01
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Use direct Flash for automatic release remediation (#55) ([1d83a5e](https://github.com/fitchmultz/pi-ask-question/commit/1d83a5e551215db5318ac4f4f0ae37f8ac1af49c))
+
+### What's Changed
+* Use direct Flash for necessary release remediation by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/55
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.3...v0.6.4
+
 ## 0.6.3 - 2026-11-01
 
 <!-- npm-release:unreleased:start -->
