@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.3 - 2026-11-01
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Pin reviewed release source binding (#53) ([c5201e4](https://github.com/fitchmultz/pi-ask-question/commit/c5201e4fd8d10799b5db05e90fb25d7ac644003f))
+
+### What's Changed
+* Bind automatic releases to the reviewed version by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/53
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.2...v0.6.3
+
 ## 0.6.2 - 2026-10-31
 
 <!-- npm-release:unreleased:start -->
