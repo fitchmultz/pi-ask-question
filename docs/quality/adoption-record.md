@@ -26,7 +26,7 @@
 | Tests     | node:test                                                      | `npm test`                                  |
 | Aggregate |                                                                | `npm run check`                             |
 
-Hosted CI runs a `quality` job (format, tests, typecheck, and once enforcement completes, lint) and the `compatibility` job (host qualification) on every pull request and main push in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml).
+Hosted CI runs a `quality` job (format, lint, tests, typecheck) and the `compatibility` job (host qualification) on every pull request and main push in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml). Lint enforcement is phased per standard Section 9.2: CI currently lints `extensions/`; repository-wide enforcement lands with the test-compliance phase.
 
 ## Source profiles and formatter ownership
 
@@ -44,11 +44,12 @@ Phased enforcement under standard Section 9.2. Each phase lands only when its de
 | Phase                                                       | Status  |
 | ----------------------------------------------------------- | ------- |
 | Toolchain, baseline config, formatting, compiler strictness | Done    |
-| Source lint compliance (`extensions/`)                      | Pending |
+| Source lint compliance (`extensions/`)                      | Done    |
 | Test lint compliance and repository-wide lint enforcement   | Pending |
 
 ## Verification
 
-| Revision    | Scope                                                                                               | Result                            |
-| ----------- | --------------------------------------------------------------------------------------------------- | --------------------------------- |
-| this change | `npm test` (74 passing), `npm run typecheck` (0 errors), `npm run format:check` (clean, idempotent) | Passed locally; hosted CI pending |
+| Revision     | Scope                                                                                                                                         | Result                            |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| this change  | `npm test` (74 passing), `npm run typecheck` (0 errors), `npm run format:check` (clean, idempotent)                                           | Passed locally; hosted CI pending |
+| source phase | `npm test` (74 passing), `npm run typecheck` (0 errors), `npx oxlint --deny-warnings extensions` (0 findings), `npm run format:check` (clean) | Passed locally; hosted CI pending |
