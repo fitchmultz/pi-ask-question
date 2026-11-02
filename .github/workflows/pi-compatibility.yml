@@ -10,11 +10,11 @@ on:
       official-version:
         description: Official stable version resolved for this run; blank resolves latest
         type: string
-        default: ''
+        default: ""
       fork-ref:
         description: Maintained fork commit resolved for this run; blank resolves main
         type: string
-        default: ''
+        default: ""
 
 permissions:
   contents: read
@@ -33,6 +33,33 @@ jobs:
       automation-ref: 9b08d65d70a01c74c4e01477ccf9473e86be33ee # main
       official-version: ${{ inputs.official-version }}
       fork-ref: ${{ inputs.fork-ref }}
+
+  quality:
+    name: quality / strict checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      npm_config_cache: ${{ github.workspace }}/.npm-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Use the reviewed npm version
+        run: npm install --global "$(node -p 'require("./package.json").packageManager')"
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Check formatting
+        run: npm run format:check
+      - name: Run behavior tests
+        if: ${{ !cancelled() }}
+        run: npm test
+      - name: Typecheck
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
 
   compatibility:
     needs: resolve
@@ -59,7 +86,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: "24"
           package-manager-cache: false
       - name: Use the reviewed npm version
         run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
@@ -80,8 +107,8 @@ jobs:
         working-directory: fork
         env:
           FORK_REF: ${{ needs.resolve.outputs.fork-ref }}
-          PI_OFFLINE: '1'
-          PI_TELEMETRY: '0'
+          PI_OFFLINE: "1"
+          PI_TELEMETRY: "0"
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run hydrate:model-data
