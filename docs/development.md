@@ -4,7 +4,7 @@
 
 ## Run locally
 
-Requires Node.js 24+ and Pi 1.0.0+. Have `fd` and `rg` on PATH for native TUI initialization without downloads.
+Requires Node.js 24+ and Pi 1.5.0+. Have `fd` and `rg` on PATH for native TUI initialization without downloads.
 
 ```bash
 npm install --ignore-scripts
@@ -34,8 +34,6 @@ npm run check:compat # all behavior tests + typecheck + pack dry-run
 Both default fullscreen and regular mode use the host renderer; no additional fork TUI APIs are required.
 
 ## Host compatibility
-
-The official development SDK 1.4.0 pins Undici 8.10.2 exactly. A parent-scoped override selects 8.12.3 for that development graph to fix GHSA-4qv8-2p9j-2685, GHSA-f72v-6w45-q472 and GHSA-xjj6-f33q-929c. Remove the override when an official SDK release supplies a fixed version. It does not replace a consumer's host SDK or Node's built-in fetch.
 
 The lockfile is a reproducible development snapshot, not a release-qualification target. CI resolves the latest stable official Pi and the maintained fork's `main` commit once per run, then freezes those identities across tests, types, packing, and native Git/npm CLI checks.
 
