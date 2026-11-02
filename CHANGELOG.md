@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.9 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Recheck unreported Cursor reviews in automatic releases (#65) ([8505219](https://github.com/fitchmultz/pi-ask-question/commit/8505219c08fa69933f49631be590ba554aa26a3f))
+
+### What's Changed
+
+- Recheck unreported Cursor reviews in automatic releases by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/65
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.8...v0.6.9
+
 ## 0.6.8 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
