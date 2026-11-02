@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.5 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Adopt strict Oxlint and Oxfmt toolchain, formatting, and compiler settings (1/3) (#57) ([9a6dd00](https://github.com/fitchmultz/pi-ask-question/commit/9a6dd00785b087b4e70996c0d12d53b0099bde9d))
+
+### What's Changed
+
+- Adopt strict Oxlint and Oxfmt toolchain, formatting, and compiler settings (1/3) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/57
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.4...v0.6.5
+
 ## 0.6.4 - 2026-11-01
 
 <!-- npm-release:unreleased:start -->
