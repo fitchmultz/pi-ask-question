@@ -477,14 +477,14 @@ nodeTest(
         (["answer", "escape", "abort"] as const).map((uiAction) => [uiMode, uiAction] as const),
       )) {
         switchMode(tuiMode);
-        await t.test(` `, async () => {
+        await t.test(`${tuiMode} ${modeAction}`, async () => {
           ui.setEditorText("untouched draft");
           // Let the native differential renderer remove the previous dialog first.
           await nextRender();
           terminal.output = "";
           const controller = new AbortController();
           const execution = tool.execute(
-            `native-`,
+            `native-${modeAction}`,
             {
               question: "Native choice?",
               options: ["First", "Second"],
