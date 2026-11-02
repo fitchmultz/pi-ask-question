@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.8 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Raise the Pi floor to 1.5.0 (#63) ([cac4541](https://github.com/fitchmultz/pi-ask-question/commit/cac45415bfa4d23e6634d0460b41ce7f8d888b6f))
+
+### What's Changed
+
+- Raise the Pi floor to 1.5.0 by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/63
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.7...v0.6.8
+
 ## 0.6.7 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
