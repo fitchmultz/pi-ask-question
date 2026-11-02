@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.7 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Bring test harnesses under strict lint and enforce repository-wide (3/3) (#61) ([0f6a655](https://github.com/fitchmultz/pi-ask-question/commit/0f6a655e7b36863f085a2d06fcb8e9d1c7b3de53))
+
+### What's Changed
+
+- Bring test harnesses under strict lint and enforce repository-wide (3/3) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/61
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.6...v0.6.7
+
 ## 0.6.6 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
