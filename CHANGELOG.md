@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.6 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Decompose ask-question sources into modules for strict lint compliance (2/3) (#59) ([fe77789](https://github.com/fitchmultz/pi-ask-question/commit/fe777891453997d7d6c4d50ae9dfaacf42e81fc9))
+
+### What's Changed
+
+- Decompose ask-question sources into modules for strict lint compliance (2/3) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/59
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.5...v0.6.6
+
 ## 0.6.5 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
