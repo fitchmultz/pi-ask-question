@@ -54,6 +54,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Check formatting
         run: npm run format:check
+      - name: Lint sources
+        run: npx oxlint --deny-warnings extensions
       - name: Run behavior tests
         if: ${{ !cancelled() }}
         run: npm test
