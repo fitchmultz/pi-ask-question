@@ -3,12 +3,55 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import test from "node:test";
+import { test as nodeTest } from "node:test";
 import { fileURLToPath } from "node:url";
+import type { AskQuestionDetails } from "../extensions/lib/types.ts";
+
+/** One JSON event line emitted by the RPC CLI subprocess. */
+type RpcEvent = {
+  type: string;
+  id?: string;
+  method?: string;
+  message?: string;
+  options?: string[];
+  data?: { disposition?: string };
+  success?: boolean;
+};
+
+/** Shape check for a parsed RPC event line. */
+function isRpcEvent(value: unknown): value is RpcEvent {
+  return (
+    typeof value === "object" && value !== null && "type" in value && typeof value.type === "string"
+  );
+}
+
+/** Shape check for ask_question details in a notify message. */
+function isAskDetails(value: unknown): value is AskQuestionDetails {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "cancelled" in value &&
+    typeof value.cancelled === "boolean" &&
+    "timedOut" in value &&
+    typeof value.timedOut === "boolean" &&
+    "questions" in value &&
+    Array.isArray(value.questions) &&
+    "answers" in value &&
+    Array.isArray(value.answers)
+  );
+}
+
+/** Parse a notify message as ask_question details. */
+function notifyDetails(event: RpcEvent): AskQuestionDetails {
+  assert.ok(event.message !== undefined, "notify event must carry a message");
+  const parsed: unknown = JSON.parse(event.message);
+  assert.ok(isAskDetails(parsed), "notify message must carry ask_question details");
+  return parsed;
+}
 
 // A command invokes the real registered tool without needing a provider call.
 // The subprocess still owns the RPC UI protocol, cancellation and command receipt.
-test(
+nodeTest(
   "bundled CLI RPC dialogs answer, cancel and recover after reload",
   { timeout: 20_000 },
   async () => {
@@ -67,7 +110,7 @@ test(
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
-    const events: any[] = [];
+    const events: RpcEvent[] = [];
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8").on("data", (data: string) => {
@@ -76,26 +119,34 @@ test(
       while ((newline = stdout.indexOf("\n")) !== -1) {
         const line = stdout.slice(0, newline);
         stdout = stdout.slice(newline + 1);
-        if (line.trim()) events.push(JSON.parse(line));
+        if (line.trim() !== "") {
+          const parsed: unknown = JSON.parse(line);
+          assert.ok(isRpcEvent(parsed), `RPC line is not an event: ${line}`);
+          events.push(parsed);
+        }
       }
     });
     child.stderr.setEncoding("utf8").on("data", (data: string) => {
       stderr += data;
     });
     const send = (message: unknown) => child.stdin.write(`${JSON.stringify(message)}\n`);
-    const wait = async (predicate: (event: any) => boolean, after = 0) => {
+    const wait = async (predicate: (event: RpcEvent) => boolean, after = 0) => {
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
         const event = events.slice(after).find(predicate);
-        if (event) return event;
+        if (event !== undefined) {
+          return event;
+        }
         assert.equal(child.exitCode, null, `RPC process exited: ${stderr}`);
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        });
       }
       assert.fail(`RPC event timed out: ${stderr}\n${JSON.stringify(events.slice(after))}`);
     };
     const ui = (method: string, after: number) =>
       wait((event) => event.type === "extension_ui_request" && event.method === method, after);
-    const respond = (request: any, value?: string) =>
+    const respond = (request: RpcEvent, value?: string) =>
       send({
         type: "extension_ui_response",
         id: request.id,
@@ -105,10 +156,12 @@ test(
       let start = events.length;
       send({ id: "multi", type: "prompt", message: "/qa-ask multi" });
       let request = await ui("select", start);
+      assert.ok(request.options !== undefined);
       assert.deepEqual(request.options, ["☐ Small", "☐ Complete", "Type a custom answer"]);
       start = events.length;
       respond(request, "☐ Small");
       request = await ui("select", start);
+      assert.ok(request.options !== undefined);
       assert.ok(request.options.includes("☑ Small"));
       start = events.length;
       respond(request, "Type a custom answer");
@@ -116,14 +169,17 @@ test(
       start = events.length;
       respond(request, "界🙂 custom");
       request = await ui("select", start);
+      assert.ok(request.options !== undefined);
       assert.ok(request.options.includes("☑ 界🙂 custom"));
       start = events.length;
       respond(request, "Done selecting");
-      const answered = JSON.parse((await ui("notify", start)).message);
+      const answered = notifyDetails(await ui("notify", start));
+      assert.ok(answered.answers[0] !== undefined);
       assert.deepEqual(answered.answers[0].selectedOptions, ["Small", "界🙂 custom"]);
       assert.equal(answered.cancelled, false);
       assert.equal(
-        (await wait((event) => event.type === "response" && event.id === "multi")).data.disposition,
+        (await wait((event) => event.type === "response" && event.id === "multi")).data
+          ?.disposition,
         "handled",
       );
 
@@ -132,7 +188,7 @@ test(
       request = await ui("select", start);
       start = events.length;
       respond(request);
-      assert.equal(JSON.parse((await ui("notify", start)).message).cancelled, true);
+      assert.equal(notifyDetails(await ui("notify", start)).cancelled, true);
       assert.equal(
         (await wait((event) => event.type === "response" && event.id === "cancel")).success,
         true,
@@ -148,7 +204,9 @@ test(
       request = await ui("select", start);
       start = events.length;
       respond(request, "Complete");
-      assert.equal(JSON.parse((await ui("notify", start)).message).answers[0].answer, "Complete");
+      const recovered = notifyDetails(await ui("notify", start));
+      assert.ok(recovered.answers[0] !== undefined);
+      assert.equal(recovered.answers[0].answer, "Complete");
       assert.equal(
         (await wait((event) => event.type === "response" && event.id === "recover")).success,
         true,
@@ -157,8 +215,11 @@ test(
       child.stdin.end();
       child.kill("SIGTERM");
       await new Promise<void>((resolve) => {
-        if (child.exitCode !== null || child.signalCode !== null) resolve();
-        else child.once("exit", () => resolve());
+        if (child.exitCode !== null || child.signalCode !== null) {
+          resolve();
+        } else {
+          child.once("exit", () => resolve());
+        }
       });
       rmSync(root, { recursive: true, force: true });
     }

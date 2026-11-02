@@ -136,7 +136,13 @@
         "checkThenables": true,
         "ignoreIIFE": false,
         "ignoreVoid": false,
-        "allowForKnownSafeCalls": [],
+        "allowForKnownSafeCalls": [
+          {
+            "from": "package",
+            "package": "node:test",
+            "name": ["nodeTest"]
+          }
+        ],
         "allowForKnownSafePromises": []
       }
     ],

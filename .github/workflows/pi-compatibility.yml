@@ -55,7 +55,7 @@ jobs:
       - name: Check formatting
         run: npm run format:check
       - name: Lint sources
-        run: npx oxlint --deny-warnings extensions
+        run: npm run lint
       - name: Run behavior tests
         if: ${{ !cancelled() }}
         run: npm test
