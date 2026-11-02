@@ -4,7 +4,7 @@
 
 ## Installation and updates
 
-Requires Pi 1.0.0 or newer and Node.js 24 or newer.
+Requires Pi 1.5.0 or newer and Node.js 24 or newer.
 
 The owned npm package is `@fitchmultz/pi-ask-question`:
 
