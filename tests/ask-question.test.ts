@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { EventEmitter, getEventListeners } from "node:events";
 import test from "node:test";
 import { Compile } from "typebox/compile";
-import { CURSOR_MARKER, getKeybindings, KeybindingsManager, setKeybindings, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
+import {
+  CURSOR_MARKER,
+  getKeybindings,
+  KeybindingsManager,
+  setKeybindings,
+  TUI_KEYBINDINGS,
+  visibleWidth,
+} from "@earendil-works/pi-tui";
 import askQuestion from "../extensions/ask-question.ts";
 
 function fakeHarness() {
@@ -14,10 +21,15 @@ function fakeHarness() {
   const entries: unknown[] = [];
   let activeTools = ["ask_question"];
   const statuses: Array<{ key: string; text: string | undefined }> = [];
-  const notifications: Array<{ message: string; type?: string }> = [];
+  const notifications: Array<{ message: string; type: string | undefined }> = [];
   const selections: Array<string | undefined> = [];
   const inputs: Array<string | undefined> = [];
-  const dialogCalls: Array<{ method: string; title: string; options?: string[]; signal?: AbortSignal }> = [];
+  const dialogCalls: Array<{
+    method: string;
+    title: string;
+    options?: string[];
+    signal: AbortSignal | undefined;
+  }> = [];
   let customComponent: any;
   let customDoneCalls = 0;
 
@@ -44,13 +56,19 @@ function fakeHarness() {
         dialogCalls.push({ method: "input", title, signal: opts?.signal });
         return inputs.shift();
       },
-      custom: (factory: any, options?: { onHandle?: (handle: unknown) => void }) => new Promise((resolve) => {
-        customComponent = factory({ requestRender() {}, addInputListener: () => () => {}, terminal }, theme, getKeybindings(), (value: unknown) => {
-          customDoneCalls += 1;
-          resolve(value);
-        });
-        options?.onHandle?.(undefined);
-      }),
+      custom: (factory: any, options?: { onHandle?: (handle: unknown) => void }) =>
+        new Promise((resolve) => {
+          customComponent = factory(
+            { requestRender() {}, addInputListener: () => () => {}, terminal },
+            theme,
+            getKeybindings(),
+            (value: unknown) => {
+              customDoneCalls += 1;
+              resolve(value);
+            },
+          );
+          options?.onHandle?.(undefined);
+        }),
     },
     sessionManager: { getBranch: () => entries, getSessionId: () => "native-test-root" },
   };
@@ -60,7 +78,7 @@ function fakeHarness() {
     registerCommand: (name: string, command: any) => commands.set(name, command),
     on: (event: string, handler: any) => {
       let listeners = subscriptions.get(event);
-      if (!listeners) subscriptions.set(event, listeners = new Set());
+      if (!listeners) subscriptions.set(event, (listeners = new Set()));
       listeners.add(handler);
       handlers.set(event, (...args: any[]) => {
         const results = [...subscriptions.get(event)!].map((listener) => listener(...args));
@@ -72,13 +90,18 @@ function fakeHarness() {
       };
     },
     events: {
-      emit: (channel: string, data: unknown) => { events.emit(channel, data); },
+      emit: (channel: string, data: unknown) => {
+        events.emit(channel, data);
+      },
       on: (channel: string, handler: (data: unknown) => void) => {
         events.on(channel, handler);
-        return () => { events.off(channel, handler); };
+        return () => {
+          events.off(channel, handler);
+        };
       },
     },
-    appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
+    appendEntry: (customType: string, data: unknown) =>
+      entries.push({ type: "custom", customType, data }),
     getActiveTools: () => activeTools,
   };
 
@@ -104,13 +127,23 @@ function fakeHarness() {
       ctx.mode = mode;
       ctx.hasUI = mode === "tui" || mode === "rpc";
     },
-    setActiveTools: (tools: string[]) => { activeTools = tools; },
+    setActiveTools: (tools: string[]) => {
+      activeTools = tools;
+    },
   };
 }
 
 function promptEvent() {
-  const systemPromptOptions: { sections: Record<string, string>; forceSystemPrompt?: string } = { sections: {} };
+  const systemPromptOptions: { sections: Record<string, string>; forceSystemPrompt?: string } = {
+    sections: {},
+  };
   return { systemPrompt: "base", systemPromptOptions };
+}
+
+function grillMeGuidance(event: ReturnType<typeof promptEvent>): string {
+  const guidance = event.systemPromptOptions.sections["grill_me"];
+  assert.ok(typeof guidance === "string");
+  return guidance;
 }
 
 test("registers ask_question tool and grill-me command", () => {
@@ -132,7 +165,9 @@ test("ask_question schema accepts supported inputs and rejects malformed argumen
   const validator = Compile(schema);
   for (const input of [
     { question: "Which?", options: ["A", "B, C", "界🙂"], multiSelect: true },
-    { questions: [{ id: "scope", question: "Which?", options: ["Minimal"] }, { question: "Why?" }] },
+    {
+      questions: [{ id: "scope", question: "Which?", options: ["Minimal"] }, { question: "Why?" }],
+    },
   ]) {
     assert.equal(validator.Check(input), true, JSON.stringify(input));
   }
@@ -155,7 +190,13 @@ test("ask_question refuses modes without UI", async () => {
   harness.setMode("print");
 
   await assert.rejects(
-    tool.execute("call_1", { question: "Continue?", options: ["Yes"] }, undefined, undefined, harness.ctx),
+    tool.execute(
+      "call_1",
+      { question: "Continue?", options: ["Yes"] },
+      undefined,
+      undefined,
+      harness.ctx,
+    ),
     /needs Pi TUI or RPC UI support/,
   );
 });
@@ -169,19 +210,25 @@ test("ask_question uses sequential RPC dialogs and supports custom and multi-sel
 
   const result = await tool.execute(
     "call_1",
-    { questions: [
-      { id: "one", question: "First?" },
-      { id: "many", question: "Second?", options: ["A", "B"], multiSelect: true },
-    ] },
+    {
+      questions: [
+        { id: "one", question: "First?" },
+        { id: "many", question: "Second?", options: ["A", "B"], multiSelect: true },
+      ],
+    },
     undefined,
     undefined,
     harness.ctx,
   );
 
-  assert.deepEqual(harness.dialogCalls.map((call) => `${call.method}:${call.title}`), [
-    "select:First?", "input:First?", "select:Second?", "select:Second?", "select:Second?",
-  ]);
-  assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["custom value", "A, B"]);
+  assert.deepEqual(
+    harness.dialogCalls.map((call) => `${call.method}:${call.title}`),
+    ["select:First?", "input:First?", "select:Second?", "select:Second?", "select:Second?"],
+  );
+  assert.deepEqual(
+    result.details.answers.map((answer: any) => answer.answer),
+    ["custom value", "A, B"],
+  );
   assert.equal(result.details.cancelled, false);
 });
 
@@ -190,17 +237,25 @@ test("RPC multi-select lets a user undo a choice before submitting", async () =>
   harness.setMode("rpc");
   harness.selections.push("☐ A", "☑ A", "☐ B", "Done selecting");
 
-  const result = await harness.tools.get("ask_question").execute(
-    "correct-choice", { question: "Which?", options: ["A", "B"], multiSelect: true },
-    undefined, undefined, harness.ctx,
-  );
+  const result = await harness.tools
+    .get("ask_question")
+    .execute(
+      "correct-choice",
+      { question: "Which?", options: ["A", "B"], multiSelect: true },
+      undefined,
+      undefined,
+      harness.ctx,
+    );
 
-  assert.deepEqual(harness.dialogCalls.map((call) => call.options), [
-    ["☐ A", "☐ B", "Type a custom answer"],
-    ["☑ A", "☐ B", "Type a custom answer", "Done selecting"],
-    ["☐ A", "☐ B", "Type a custom answer"],
-    ["☐ A", "☑ B", "Type a custom answer", "Done selecting"],
-  ]);
+  assert.deepEqual(
+    harness.dialogCalls.map((call) => call.options),
+    [
+      ["☐ A", "☐ B", "Type a custom answer"],
+      ["☑ A", "☐ B", "Type a custom answer", "Done selecting"],
+      ["☐ A", "☐ B", "Type a custom answer"],
+      ["☐ A", "☑ B", "Type a custom answer", "Done selecting"],
+    ],
+  );
   assert.ok(harness.dialogCalls.every((call) => call.title === "Which?"));
   assert.deepEqual(result.details.answers[0]?.selectedOptions, ["B"]);
   assert.equal(result.content[0].text, 'User answered: ["B"]');
@@ -212,17 +267,25 @@ test("RPC multi-select can remove a custom answer that matches a control label",
   harness.selections.push("Type a custom answer", "☑ Done selecting", "☐ A", "Done selecting");
   harness.inputs.push("Done selecting");
 
-  const result = await harness.tools.get("ask_question").execute(
-    "correct-custom", { question: "Which?", options: ["A"], multiSelect: true },
-    undefined, undefined, harness.ctx,
-  );
+  const result = await harness.tools
+    .get("ask_question")
+    .execute(
+      "correct-custom",
+      { question: "Which?", options: ["A"], multiSelect: true },
+      undefined,
+      undefined,
+      harness.ctx,
+    );
 
-  assert.deepEqual(harness.dialogCalls.filter((call) => call.method === "select").map((call) => call.options), [
-    ["☐ A", "Type a custom answer"],
-    ["☐ A", "☑ Done selecting", "Type a custom answer", "Done selecting"],
-    ["☐ A", "Type a custom answer"],
-    ["☑ A", "Type a custom answer", "Done selecting"],
-  ]);
+  assert.deepEqual(
+    harness.dialogCalls.filter((call) => call.method === "select").map((call) => call.options),
+    [
+      ["☐ A", "Type a custom answer"],
+      ["☐ A", "☑ Done selecting", "Type a custom answer", "Done selecting"],
+      ["☐ A", "Type a custom answer"],
+      ["☑ A", "Type a custom answer", "Done selecting"],
+    ],
+  );
   assert.deepEqual(result.details.answers[0]?.selectedOptions, ["A"]);
   assert.equal(result.content[0].text, 'User answered: ["A"]');
 });
@@ -235,9 +298,12 @@ test("ask_question preserves comma-containing multi-select choices in TUI and RP
     const harness = fakeHarness();
     harness.setMode(mode);
     const selectedOptions = indices.map((index) => options[index]);
-    if (mode === "rpc") harness.selections.push(...selectedOptions.map((option) => `☐ ${option}`), "Done selecting");
+    if (mode === "rpc")
+      harness.selections.push(...selectedOptions.map((option) => `☐ ${option}`), "Done selecting");
     const controller = new AbortController();
-    const execution = harness.tools.get("ask_question").execute("commas", params, controller.signal, undefined, harness.ctx);
+    const execution = harness.tools
+      .get("ask_question")
+      .execute("commas", params, controller.signal, undefined, harness.ctx);
     try {
       if (mode === "tui") {
         const component = harness.getCustomComponent();
@@ -273,10 +339,15 @@ test("TUI review preserves spaces inside wrapped multi-select choices", async ()
   for (const choice of ["B, C", "B,C"]) {
     const harness = fakeHarness();
     const controller = new AbortController();
-    const execution = harness.tools.get("ask_question").execute(
-      "review", { question: "Which parts?", options: ["A", "B, C", "B,C"], multiSelect: true },
-      controller.signal, undefined, harness.ctx,
-    );
+    const execution = harness.tools
+      .get("ask_question")
+      .execute(
+        "review",
+        { question: "Which parts?", options: ["A", "B, C", "B,C"], multiSelect: true },
+        controller.signal,
+        undefined,
+        harness.ctx,
+      );
     const component = harness.getCustomComponent();
     component.handleInput(" ");
     component.handleInput("\u001b[B");
@@ -289,7 +360,13 @@ test("TUI review preserves spaces inside wrapped multi-select choices", async ()
       const lines = component.render(20);
       const start = lines.findIndex((line: string) => line.startsWith(prefix));
       assert.ok(start >= 0);
-      assert.equal(lines.slice(start, start + 2).map((line: string) => line.slice(prefix.length)).join(""), JSON.stringify(["A", choice]));
+      assert.equal(
+        lines
+          .slice(start, start + 2)
+          .map((line: string) => line.slice(prefix.length))
+          .join(""),
+        JSON.stringify(["A", choice]),
+      );
     } finally {
       controller.abort();
       await execution;
@@ -298,13 +375,21 @@ test("TUI review preserves spaces inside wrapped multi-select choices", async ()
 });
 
 test("TUI review keeps wide choices visible when the answer indent leaves one column", async () => {
-  for (const [id, width] of [["question_1", 13], ["abcdefghijklmnopq", 20]] as const) {
+  for (const [id, width] of [
+    ["question_1", 13],
+    ["abcdefghijklmnopq", 20],
+  ] as const) {
     const harness = fakeHarness();
     const controller = new AbortController();
-    const execution = harness.tools.get("ask_question").execute(
-      "wide-review", { questions: [{ id, question: "Which?", options: ["漢"], multiSelect: true }] },
-      controller.signal, undefined, harness.ctx,
-    );
+    const execution = harness.tools
+      .get("ask_question")
+      .execute(
+        "wide-review",
+        { questions: [{ id, question: "Which?", options: ["漢"], multiSelect: true }] },
+        controller.signal,
+        undefined,
+        harness.ctx,
+      );
     const component = harness.getCustomComponent();
     component.handleInput(" ");
     component.handleInput("\r");
@@ -329,10 +414,15 @@ test("TUI tool result distinguishes choices whose spaces fall on a wrap", async 
     harness.selections.push("☐ A", `☐ ${choice}`, "Done selecting");
     const tool = harness.tools.get("ask_question");
     const result = await tool.execute(
-      "result", { question: "Which?", options: ["A", withSpace, withoutSpace], multiSelect: true },
-      undefined, undefined, harness.ctx,
+      "result",
+      { question: "Which?", options: ["A", withSpace, withoutSpace], multiSelect: true },
+      undefined,
+      undefined,
+      harness.ctx,
     );
-    return tool.renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx).render(20);
+    return tool
+      .renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx)
+      .render(20);
   }
 
   assert.notDeepEqual(await rendered(withSpace), await rendered(withoutSpace));
@@ -346,10 +436,17 @@ test("ask_question retries RPC option selection after blank custom input", async
   harness.inputs.push("   ");
 
   const result = await tool.execute(
-    "call_1", { question: "Continue?", options: ["A"] }, undefined, undefined, harness.ctx,
+    "call_1",
+    { question: "Continue?", options: ["A"] },
+    undefined,
+    undefined,
+    harness.ctx,
   );
 
-  assert.deepEqual(harness.dialogCalls.map((call) => call.method), ["select", "input", "select"]);
+  assert.deepEqual(
+    harness.dialogCalls.map((call) => call.method),
+    ["select", "input", "select"],
+  );
   assert.equal(result.details.answers[0]?.answer, "A");
   assert.equal(result.details.cancelled, false);
 });
@@ -361,7 +458,13 @@ test("ask_question reports RPC cancellation and forwards the abort signal", asyn
   harness.selections.push(undefined);
   const controller = new AbortController();
 
-  const result = await tool.execute("call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx);
+  const result = await tool.execute(
+    "call_1",
+    { question: "Continue?" },
+    controller.signal,
+    undefined,
+    harness.ctx,
+  );
 
   controller.abort();
   assert.equal(harness.dialogCalls[0]?.signal?.aborted, true);
@@ -375,9 +478,9 @@ test("ask_question returns TUI cancellation when already aborted", async () => {
   const controller = new AbortController();
   controller.abort();
 
-  const result = await harness.tools.get("ask_question").execute(
-    "call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx,
-  );
+  const result = await harness.tools
+    .get("ask_question")
+    .execute("call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx);
 
   assert.equal(result.details.cancelled, true);
 });
@@ -386,10 +489,16 @@ test("ask_question reflows after terminal resize and forwards focus to its edito
   const harness = fakeHarness();
   const execution = harness.tools.get("ask_question").execute(
     "call_1",
-    { questions: [
-      { id: "this_identifier_is_far_too_long", question: "漢🙂 A deliberately long question that must wrap when the terminal becomes narrow?" },
-      { id: "second", question: "Second question?" },
-    ] },
+    {
+      questions: [
+        {
+          id: "this_identifier_is_far_too_long",
+          question:
+            "漢🙂 A deliberately long question that must wrap when the terminal becomes narrow?",
+        },
+        { id: "second", question: "Second question?" },
+      ],
+    },
     undefined,
     undefined,
     harness.ctx,
@@ -429,10 +538,12 @@ test("ask_question keeps wide options and answered review within narrow widths",
   const harness = fakeHarness();
   const execution = harness.tools.get("ask_question").execute(
     "call_1",
-    { questions: [
-      { question: "First?", options: ["漢🙂 option"] },
-      { question: "Second?", options: ["Yes"] },
-    ] },
+    {
+      questions: [
+        { question: "First?", options: ["漢🙂 option"] },
+        { question: "Second?", options: ["Yes"] },
+      ],
+    },
     undefined,
     undefined,
     harness.ctx,
@@ -453,16 +564,26 @@ test("ask_question keeps wide options and answered review within narrow widths",
 test("ask_question keeps the question and selected wrapped option visible on short and resized terminals", async () => {
   const harness = fakeHarness();
   const options = Array.from({ length: 30 }, (_, index) => `Choice ${index + 1}`);
-  options[15] = "A detailed choice with enough explanation to wrap across multiple rows while keeping its final words visible: tail marker";
+  options[15] =
+    "A detailed choice with enough explanation to wrap across multiple rows while keeping its final words visible: tail marker";
   const controller = new AbortController();
-  const execution = harness.tools.get("ask_question").execute(
-    "long-list", { question: "Which choice should I use?", options }, controller.signal, undefined, harness.ctx,
-  );
+  const execution = harness.tools
+    .get("ask_question")
+    .execute(
+      "long-list",
+      { question: "Which choice should I use?", options },
+      controller.signal,
+      undefined,
+      harness.ctx,
+    );
   const component = harness.getCustomComponent();
   const visible = () => component.render(80).slice(-harness.terminal.rows);
   const assertSelection = (label: string) => {
     const rendered = component.render(80);
-    assert.ok(rendered.length <= harness.terminal.rows, `Question UI uses ${rendered.length} of ${harness.terminal.rows} available rows`);
+    assert.ok(
+      rendered.length <= harness.terminal.rows,
+      `Question UI uses ${rendered.length} of ${harness.terminal.rows} available rows`,
+    );
     const screen = visible().join("\n");
     assert.match(screen, /Which choice should I use\?/);
     assert.ok(screen.includes(label), `${label} must remain in the native viewport`);
@@ -474,7 +595,11 @@ test("ask_question keeps the question and selected wrapped option visible on sho
     assertSelection("> 17. Choice 17");
     component.handleInput("\u001b[A");
     assertSelection("> 16. A detailed choice");
-    assert.match(visible().join("\n"), /tail marker/, "The whole selected wrapped label remains readable");
+    assert.match(
+      visible().join("\n"),
+      /tail marker/,
+      "The whole selected wrapped label remains readable",
+    );
 
     harness.terminal.rows = 15;
     assertSelection("> 16. A detailed choice");
@@ -495,9 +620,15 @@ test("ask_question keeps the question and selected wrapped option visible on sho
 test("ask_question previews only selected answers after deselecting a matching custom value", async () => {
   const harness = fakeHarness();
   const controller = new AbortController();
-  const execution = harness.tools.get("ask_question").execute(
-    "preview", { question: "Choose?", options: ["A", "B"], multiSelect: true }, controller.signal, undefined, harness.ctx,
-  );
+  const execution = harness.tools
+    .get("ask_question")
+    .execute(
+      "preview",
+      { question: "Choose?", options: ["A", "B"], multiSelect: true },
+      controller.signal,
+      undefined,
+      harness.ctx,
+    );
   const component = harness.getCustomComponent();
   try {
     // Enter custom A, select B, then deselect the predefined A.
@@ -516,17 +647,25 @@ test("ask_question previews only selected answers after deselecting a matching c
 
 test("ask_question shows and honors configured editor bindings", async () => {
   const originalKeybindings = getKeybindings();
-  setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS, {
-    "tui.input.submit": "ctrl+s",
-    "tui.select.confirm": "ctrl+y",
-    "tui.select.cancel": "ctrl+x",
-  }));
+  setKeybindings(
+    new KeybindingsManager(TUI_KEYBINDINGS, {
+      "tui.input.submit": "ctrl+s",
+      "tui.select.confirm": "ctrl+y",
+      "tui.select.cancel": "ctrl+x",
+    }),
+  );
 
   try {
     const harness = fakeHarness();
-    const execution = harness.tools.get("ask_question").execute(
-      "call_1", { question: "Choose?", options: ["First", "Second"] }, undefined, undefined, harness.ctx,
-    );
+    const execution = harness.tools
+      .get("ask_question")
+      .execute(
+        "call_1",
+        { question: "Choose?", options: ["First", "Second"] },
+        undefined,
+        undefined,
+        harness.ctx,
+      );
     const component = harness.getCustomComponent();
     component.handleInput("\u001b[B");
     component.handleInput("\u001b[B");
@@ -547,9 +686,9 @@ test("ask_question shows and honors configured editor bindings", async () => {
     assert.equal(result.details.answers[0].answer, "Custom");
 
     const cancelledHarness = fakeHarness();
-    const cancelledExecution = cancelledHarness.tools.get("ask_question").execute(
-      "call_2", { question: "Cancel?" }, undefined, undefined, cancelledHarness.ctx,
-    );
+    const cancelledExecution = cancelledHarness.tools
+      .get("ask_question")
+      .execute("call_2", { question: "Cancel?" }, undefined, undefined, cancelledHarness.ctx);
     cancelledHarness.getCustomComponent().handleInput("\u0018");
     assert.equal((await cancelledExecution).details.cancelled, true);
   } finally {
@@ -561,9 +700,9 @@ test("ask_question closes active TUI on abort and removes its listener", async (
   const harness = fakeHarness();
   const controller = new AbortController();
 
-  const execution = harness.tools.get("ask_question").execute(
-    "call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx,
-  );
+  const execution = harness.tools
+    .get("ask_question")
+    .execute("call_1", { question: "Continue?" }, controller.signal, undefined, harness.ctx);
   controller.abort();
   const result = await execution;
 
@@ -574,7 +713,11 @@ test("ask_question closes active TUI on abort and removes its listener", async (
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });
 
-function pendingDialog(_title: string, _options?: string[] | string, opts?: { signal?: AbortSignal }): Promise<undefined> {
+function pendingDialog(
+  _title: string,
+  _options?: string[] | string,
+  opts?: { signal?: AbortSignal },
+): Promise<undefined> {
   return new Promise((resolve) => {
     if (opts?.signal?.aborted) resolve(undefined);
     else opts?.signal?.addEventListener("abort", () => resolve(undefined), { once: true });
@@ -586,7 +729,13 @@ test("ask_question returns the AFK reply at exactly five minutes without choosin
   const harness = fakeHarness();
   const controller = new AbortController();
   const tool = harness.tools.get("ask_question");
-  const execution = tool.execute("timeout", { question: "Choose?", options: ["First", "Second"] }, controller.signal, undefined, harness.ctx);
+  const execution = tool.execute(
+    "timeout",
+    { question: "Choose?", options: ["First", "Second"] },
+    controller.signal,
+    undefined,
+    harness.ctx,
+  );
   const component = harness.getCustomComponent();
 
   t.mock.timers.tick(299_999);
@@ -600,8 +749,14 @@ test("ask_question returns the AFK reply at exactly five minutes without choosin
   assert.equal(result.details.timedOut, true);
   assert.equal(result.details.cancelled, false);
   assert.equal(controller.signal.aborted, false);
-  assert.equal(result.content[0].text, "Timed out after 5 minutes. Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.");
-  const rendered = tool.renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx).render(80).join("\n");
+  assert.equal(
+    result.content[0].text,
+    "Timed out after 5 minutes. Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.",
+  );
+  const rendered = tool
+    .renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx)
+    .render(80)
+    .join("\n");
   assert.match(rendered, /Timed out after 5 minutes/);
   assert.match(rendered, /AFK/);
   assert.doesNotMatch(rendered, /Cancelled|✓|User answered/);
@@ -614,12 +769,18 @@ test("interaction keeps a question set open beyond five minutes without affectin
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const harness = fakeHarness();
   const controller = new AbortController();
-  const execution = harness.tools.get("ask_question").execute("partial", {
-    questions: [
-      { question: "First?", options: ["A"] },
-      { question: "Second?", options: ["B"], multiSelect: true },
-    ],
-  }, controller.signal, undefined, harness.ctx);
+  const execution = harness.tools.get("ask_question").execute(
+    "partial",
+    {
+      questions: [
+        { question: "First?", options: ["A"] },
+        { question: "Second?", options: ["B"], multiSelect: true },
+      ],
+    },
+    controller.signal,
+    undefined,
+    harness.ctx,
+  );
   const component = harness.getCustomComponent();
   try {
     t.mock.timers.tick(200_000);
@@ -629,20 +790,29 @@ test("interaction keeps a question set open beyond five minutes without affectin
     component.handleInput("\r");
     component.handleInput("A lengthy draft");
     t.mock.timers.tick(400_000);
-    assert.equal(harness.getCustomDoneCalls(), 0, "Typing and earlier choices must prevent an AFK result");
+    assert.equal(
+      harness.getCustomDoneCalls(),
+      0,
+      "Typing and earlier choices must prevent an AFK result",
+    );
     component.handleInput("\r");
     component.handleInput("\u001b[C");
     component.handleInput("\r");
     const result = await execution;
     assert.equal(result.details.timedOut, false);
-    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["A", "B, A lengthy draft"]);
+    assert.deepEqual(
+      result.details.answers.map((answer: any) => answer.answer),
+      ["A", "B, A lengthy draft"],
+    );
     assert.deepEqual(result.details.answers[1].selectedOptions, ["B", "A lengthy draft"]);
   } finally {
     controller.abort();
     await execution;
   }
 
-  const next = harness.tools.get("ask_question").execute("next", { question: "Another question?" }, undefined, undefined, harness.ctx);
+  const next = harness.tools
+    .get("ask_question")
+    .execute("next", { question: "Another question?" }, undefined, undefined, harness.ctx);
   t.mock.timers.tick(300_000);
   assert.equal((await next).details.timedOut, true, "A new untouched question still times out");
 });
@@ -652,9 +822,15 @@ test("a mouse interaction keeps the question open", async (t) => {
   for (const type of ["press", "move"]) {
     const harness = fakeHarness();
     const controller = new AbortController();
-    const execution = harness.tools.get("ask_question").execute(
-      "mouse", { question: "Choose?", options: ["A"] }, controller.signal, undefined, harness.ctx,
-    );
+    const execution = harness.tools
+      .get("ask_question")
+      .execute(
+        "mouse",
+        { question: "Choose?", options: ["A"] },
+        controller.signal,
+        undefined,
+        harness.ctx,
+      );
     const component = harness.getCustomComponent();
     try {
       component.handleMouse({ type, button: type === "press" ? "left" : "none", x: 2, y: 2 });
@@ -692,9 +868,18 @@ test("RPC choices keep later dialogs open past the original timeout", async (t) 
     return input(...args);
   };
   const controller = new AbortController();
-  const execution = harness.tools.get("ask_question").execute("rpc-partial", {
-    questions: [{ question: "First?" }, { question: "Second?", options: ["B", "C"], multiSelect: true }],
-  }, controller.signal, undefined, harness.ctx);
+  const execution = harness.tools.get("ask_question").execute(
+    "rpc-partial",
+    {
+      questions: [
+        { question: "First?" },
+        { question: "Second?", options: ["B", "C"], multiSelect: true },
+      ],
+    },
+    controller.signal,
+    undefined,
+    harness.ctx,
+  );
   try {
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.ok(pendingSignal);
@@ -704,7 +889,10 @@ test("RPC choices keep later dialogs open past the original timeout", async (t) 
     controller.abort();
     const result = await execution;
     assert.equal(result.details.cancelled, true);
-    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Typed answer", "B"]);
+    assert.deepEqual(
+      result.details.answers.map((answer: any) => answer.answer),
+      ["Typed answer", "B"],
+    );
     assert.equal(getEventListeners(pendingSignal!, "abort").length, 0);
   }
 });
@@ -720,7 +908,9 @@ test("RPC custom answer selection disables timeout and caller cancellation still
     return pendingDialog(...args);
   };
   const controller = new AbortController();
-  const execution = harness.tools.get("ask_question").execute("rpc-input", { question: "Details?" }, controller.signal, undefined, harness.ctx);
+  const execution = harness.tools
+    .get("ask_question")
+    .execute("rpc-input", { question: "Details?" }, controller.signal, undefined, harness.ctx);
   try {
     await new Promise<void>((resolve) => setImmediate(resolve));
     t.mock.timers.tick(300_000);
@@ -736,7 +926,9 @@ test("ask_question clears its timer after an answer, cancellation, or UI error",
   t.mock.timers.enable({ apis: ["setTimeout"] });
   for (const key of ["\r", "\u001b"]) {
     const harness = fakeHarness();
-    const execution = harness.tools.get("ask_question").execute("early", { question: "Choose?", options: ["A"] }, undefined, undefined, harness.ctx);
+    const execution = harness.tools
+      .get("ask_question")
+      .execute("early", { question: "Choose?", options: ["A"] }, undefined, undefined, harness.ctx);
     harness.getCustomComponent().handleInput(key);
     const result = await execution;
     assert.equal(result.details.timedOut, false);
@@ -745,8 +937,15 @@ test("ask_question clears its timer after an answer, cancellation, or UI error",
     assert.equal(harness.getCustomDoneCalls(), 1);
   }
   const harness = fakeHarness();
-  harness.ctx.ui.custom = async () => { throw new Error("UI failed"); };
-  await assert.rejects(harness.tools.get("ask_question").execute("error", { question: "Choose?" }, undefined, undefined, harness.ctx), /UI failed/);
+  harness.ctx.ui.custom = async () => {
+    throw new Error("UI failed");
+  };
+  await assert.rejects(
+    harness.tools
+      .get("ask_question")
+      .execute("error", { question: "Choose?" }, undefined, undefined, harness.ctx),
+    /UI failed/,
+  );
 });
 
 function remoteHarness() {
@@ -759,7 +958,11 @@ function remoteHarness() {
     harness.tools.get("ask_question").execute("remote", params, signal, undefined, harness.ctx);
   const reply = (target: any, answer: unknown, requestId = "reply") => {
     harness.events.emit("pi-ask-question:answer", {
-      requestId, promptId: target.promptId, questionId: target.questionId, revision: target.revision, answer,
+      requestId,
+      promptId: target.promptId,
+      questionId: target.questionId,
+      revision: target.revision,
+      answer,
     });
   };
   return { ...harness, states, receipts, start, reply };
@@ -777,12 +980,19 @@ test("navigation keeps the cooperative question answerable after its original de
     assert.equal(initial.timeoutActive, true);
     harness.getCustomComponent().handleInput("\u001b[B");
     t.mock.timers.tick(300_000);
-    harness.events.emit("pi-ask-question:query", { queryId: "after-interaction", protocolVersion: 1 });
+    harness.events.emit("pi-ask-question:query", {
+      queryId: "after-interaction",
+      protocolVersion: 1,
+    });
     const waiting = snapshots.at(-1);
     assert.equal(waiting.status, "waiting");
     assert.equal(waiting.timeoutActive, false);
     assert.equal(waiting.deadline, initial.deadline);
-    harness.events.emit("pi-ask-question:answer", { ...waiting, requestId: "late-answer", answer: "B" });
+    harness.events.emit("pi-ask-question:answer", {
+      ...waiting,
+      requestId: "late-answer",
+      answer: "B",
+    });
     assert.equal(harness.receipts.at(-1).status, "answered");
     assert.equal((await execution).details.answers[0].answer, "B");
   } finally {
@@ -813,7 +1023,8 @@ test("a late observer reads the true current target and looks up a lost accepted
   const lookups: any[] = [];
   harness.events.on("pi-ask-question:snapshot", (data) => snapshots.push(data));
   harness.events.on("pi-ask-question:lookup-result", (data) => lookups.push(data));
-  const query = () => harness.events.emit("pi-ask-question:query", { queryId: "late", protocolVersion: 1 });
+  const query = () =>
+    harness.events.emit("pi-ask-question:query", { queryId: "late", protocolVersion: 1 });
   t.mock.timers.tick(200_000);
   query();
   const target = snapshots.at(-1);
@@ -822,31 +1033,69 @@ test("a late observer reads the true current target and looks up a lost accepted
   assert.equal(target.deadline, 301_000);
   assert.equal(target.nativeRoot, "native-test-root");
   assert.equal(typeof target.ownerGeneration, "string");
-  for (const changed of [{ ownerGeneration: "old-owner" }, { nativeRoot: "other-root" },
-    { deadline: target.deadline + 1 }, { protocolVersion: 2 }]) {
-    harness.events.emit("pi-ask-question:answer", { ...target, ...changed, requestId: "not-applied", answer: "wrong target" });
+  for (const changed of [
+    { ownerGeneration: "old-owner" },
+    { nativeRoot: "other-root" },
+    { deadline: target.deadline + 1 },
+    { protocolVersion: 2 },
+  ]) {
+    harness.events.emit("pi-ask-question:answer", {
+      ...target,
+      ...changed,
+      requestId: "not-applied",
+      answer: "wrong target",
+    });
     assert.equal(harness.receipts.at(-1).status, "stale");
   }
-  harness.events.emit("pi-ask-question:answer", { ...target, requestId: "accepted-first", answer: "saved" });
+  harness.events.emit("pi-ask-question:answer", {
+    ...target,
+    requestId: "accepted-first",
+    answer: "saved",
+  });
   // Discard the result, as a disconnected adapter would.
   harness.receipts.length = 0;
   query();
-  assert.equal(snapshots.at(-1).questionId, "question_2", "Query reads fresh owner state before coalesced publication");
+  assert.equal(
+    snapshots.at(-1).questionId,
+    "question_2",
+    "Query reads fresh owner state before coalesced publication",
+  );
   assert.equal(snapshots.at(-1).deadline, target.deadline, "Progression never extends the timer");
-  const lookup = { protocolVersion: 1, queryId: "reconcile", ownerGeneration: target.ownerGeneration,
-    nativeRoot: target.nativeRoot, promptId: target.promptId, requestId: "accepted-first" };
+  const lookup = {
+    protocolVersion: 1,
+    queryId: "reconcile",
+    ownerGeneration: target.ownerGeneration,
+    nativeRoot: target.nativeRoot,
+    promptId: target.promptId,
+    requestId: "accepted-first",
+  };
   harness.events.emit("pi-ask-question:lookup", lookup);
   assert.equal(lookups.at(-1).status, "answered");
   assert.equal(lookups.at(-1).questionId, target.questionId);
   assert.match(lookups.at(-1).answerFingerprint, /^[a-f0-9]{64}$/);
-  harness.events.emit("pi-ask-question:answer", { ...snapshots.at(-1), requestId: "accepted-first", answer: "changed" });
+  harness.events.emit("pi-ask-question:answer", {
+    ...snapshots.at(-1),
+    requestId: "accepted-first",
+    answer: "changed",
+  });
   assert.equal(harness.receipts.at(-1).status, "stale");
   harness.reply(snapshots.at(-1), "last", "accepted-last");
-  assert.deepEqual((await execution).details.answers.map((answer: any) => answer.answer), ["saved", "last"]);
+  assert.deepEqual(
+    (await execution).details.answers.map((answer: any) => answer.answer),
+    ["saved", "last"],
+  );
   harness.events.emit("pi-ask-question:lookup", lookup);
-  assert.equal(lookups.at(-1).status, "answered", "Completion retains the accepted application, not just a live listener");
+  assert.equal(
+    lookups.at(-1).status,
+    "answered",
+    "Completion retains the accepted application, not just a live listener",
+  );
   harness.events.emit("pi-ask-question:lookup", { ...lookup, requestId: "never-applied" });
-  assert.equal(lookups.at(-1).status, "unknown", "Absence is not proof an answer was not applied elsewhere");
+  assert.equal(
+    lookups.at(-1).status,
+    "unknown",
+    "Absence is not proof an answer was not applied elsewhere",
+  );
   harness.events.emit("pi-ask-question:lookup", { ...lookup, ownerGeneration: "old-owner" });
   assert.equal(lookups.at(-1).status, "stale");
   harness.events.emit("pi-ask-question:query", { queryId: "future", protocolVersion: 2 });
@@ -859,7 +1108,9 @@ test("the observer reports RPC and print as unsupported without injecting UI inp
     harness.setMode(mode);
     await harness.handlers.get("session_start")({}, harness.ctx);
     let snapshot: any;
-    harness.events.on("pi-ask-question:snapshot", (data) => { snapshot = data; });
+    harness.events.on("pi-ask-question:snapshot", (data) => {
+      snapshot = data;
+    });
     harness.events.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "mode" });
     assert.equal(snapshot.status, "unsupported");
     assert.equal(snapshot.mode, mode);
@@ -872,7 +1123,11 @@ test("remote strings complete the actual TUI owner as literal custom answers, ne
   for (const text of ["Yes", "yes please", "/grill-me on", "  界🙂, keep this\nliteral  "]) {
     const harness = remoteHarness();
     harness.events.on("pi-ask-question:result", () => {
-      assert.equal(harness.getCustomDoneCalls(), 1, "Success is emitted after the owner's completion callback");
+      assert.equal(
+        harness.getCustomDoneCalls(),
+        1,
+        "Success is emitted after the owner's completion callback",
+      );
     });
     const execution = harness.start({ question: "Approve?", options: ["Yes", "No"] });
     const target = harness.states[0];
@@ -880,27 +1135,39 @@ test("remote strings complete the actual TUI owner as literal custom answers, ne
     assert.deepEqual(target.options, ["Yes", "No"]);
     harness.reply(target, text);
     assert.equal(harness.getCustomDoneCalls(), 1);
-    assert.deepEqual(harness.receipts, [{ requestId: "reply", promptId: target.promptId, status: "answered" }]);
-    assert.deepEqual((await execution).details.answers, [{
-      id: "question_1", question: "Approve?", answer: text.trim(), wasCustom: true,
-    }]);
+    assert.deepEqual(harness.receipts, [
+      { requestId: "reply", promptId: target.promptId, status: "answered" },
+    ]);
+    assert.deepEqual((await execution).details.answers, [
+      {
+        id: "question_1",
+        question: "Approve?",
+        answer: text.trim(),
+        wasCustom: true,
+      },
+    ]);
     harness.reply(target, "No");
     harness.getCustomComponent().handleInput("\r");
     harness.getCustomComponent().dispose();
     await flushState();
     assert.equal(harness.getCustomDoneCalls(), 1);
     assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
-    assert.deepEqual(harness.states.map((state) => state.status), ["waiting", "closed"]);
+    assert.deepEqual(
+      harness.states.map((state) => state.status),
+      ["waiting", "closed"],
+    );
   }
 });
 
 test("remote answers validate payloads without splitting or fuzzy matching and preserve exact multi-select progression", async () => {
   const harness = remoteHarness();
-  const execution = harness.start({ questions: [
-    { id: "parts", question: "First?", options: ["Yes"] },
-    { id: "parts", question: "Which parts?", options: ["A", "B, C"], multiSelect: true },
-    { id: "why", question: "Why?", multiSelect: true },
-  ] });
+  const execution = harness.start({
+    questions: [
+      { id: "parts", question: "First?", options: ["Yes"] },
+      { id: "parts", question: "Which parts?", options: ["A", "B, C"], multiSelect: true },
+      { id: "why", question: "Why?", multiSelect: true },
+    ],
+  });
   let target = harness.states.at(-1);
   for (const answer of ["", "   ", "x".repeat(16_385), ["Yes"], null, { text: "Yes" }]) {
     harness.reply(target, answer, "invalid");
@@ -916,7 +1183,11 @@ test("remote answers validate payloads without splitting or fuzzy matching and p
   harness.reply(firstTarget, "overwrite", "old-question");
   assert.equal(harness.receipts.at(-1).status, "stale");
   harness.reply(target, ["A"], "first");
-  assert.equal(harness.receipts.at(-1).status, "stale", "Accepted request IDs cannot be reused for a new question");
+  assert.equal(
+    harness.receipts.at(-1).status,
+    "stale",
+    "Accepted request IDs cannot be reused for a new question",
+  );
   for (const answer of [[], ["B"], ["a"], ["A", "A"], ["A,B, C"], ["A", 1], new Array(1)]) {
     harness.reply(target, answer, "invalid");
     assert.equal(harness.receipts.at(-1).status, "invalid");
@@ -929,8 +1200,20 @@ test("remote answers validate payloads without splitting or fuzzy matching and p
   const result = await execution;
   assert.deepEqual(result.details.answers, [
     { id: "parts", question: "First?", answer: "Yes", wasCustom: true },
-    { id: "parts_2", question: "Which parts?", answer: "B, C, A", selectedOptions: ["B, C", "A"], wasCustom: false },
-    { id: "why", question: "Why?", answer: "because, literally", selectedOptions: ["because, literally"], wasCustom: true },
+    {
+      id: "parts_2",
+      question: "Which parts?",
+      answer: "B, C, A",
+      selectedOptions: ["B, C", "A"],
+      wasCustom: false,
+    },
+    {
+      id: "why",
+      question: "Why?",
+      answer: "because, literally",
+      selectedOptions: ["because, literally"],
+      wasCustom: true,
+    },
   ]);
   assert.equal(result.details.cancelled, false);
   assert.equal(harness.getCustomDoneCalls(), 1);
@@ -938,15 +1221,21 @@ test("remote answers validate payloads without splitting or fuzzy matching and p
 
 test("local commits and tab changes invalidate frozen remote revisions without losing local selections", async () => {
   const harness = remoteHarness();
-  const execution = harness.start({ questions: [
-    { id: "parts", question: "Parts?", options: ["A", "B"], multiSelect: true },
-    { id: "next", question: "Next?", options: ["Continue"] },
-  ] });
+  const execution = harness.start({
+    questions: [
+      { id: "parts", question: "Parts?", options: ["A", "B"], multiSelect: true },
+      { id: "next", question: "Next?", options: ["Continue"] },
+    ],
+  });
   const component = harness.getCustomComponent();
   const initial = harness.states.at(-1);
   component.handleInput(" ");
   harness.reply(initial, ["B"]);
-  assert.equal(harness.receipts.at(-1).status, "stale", "Local selection wins even before state publication");
+  assert.equal(
+    harness.receipts.at(-1).status,
+    "stale",
+    "Local selection wins even before state publication",
+  );
   await flushState();
   const selected = harness.states.at(-1);
   component.handleInput("\u001b[C");
@@ -957,7 +1246,10 @@ test("local commits and tab changes invalidate frozen remote revisions without l
   component.handleInput("\r");
   assert.match(component.render(80).join("\n"), /parts: \["A"\]/);
   component.handleInput("\r");
-  assert.deepEqual((await execution).details.answers.map((answer: any) => answer.answer), ["A", "Continue"]);
+  assert.deepEqual(
+    (await execution).details.answers.map((answer: any) => answer.answer),
+    ["A", "Continue"],
+  );
 });
 
 test("local single-answer race and expired prompt IDs cannot retarget a subsequent tool call", async () => {
@@ -975,7 +1267,10 @@ test("local single-answer race and expired prompt IDs cannot retarget a subseque
   assert.equal(harness.getCustomDoneCalls(), 1);
   harness.reply({ ...current, questionId: "wrong" }, "wrong question");
   harness.reply({ ...current, revision: current.revision + 1 }, "wrong revision");
-  assert.deepEqual(harness.receipts.map((receipt) => receipt.status), ["stale", "stale"]);
+  assert.deepEqual(
+    harness.receipts.map((receipt) => receipt.status),
+    ["stale", "stale"],
+  );
   harness.reply(current, "new owner");
   assert.equal((await next).details.answers[0].answer, "new owner");
 });
@@ -988,9 +1283,15 @@ test("local custom editing withdraws the remote target and preserves its draft a
   component.handleInput("\r");
   component.handleInput("local draft");
   let snapshot: any;
-  harness.events.on("pi-ask-question:snapshot", (data) => { snapshot = data; });
+  harness.events.on("pi-ask-question:snapshot", (data) => {
+    snapshot = data;
+  });
   harness.events.emit("pi-ask-question:query", { queryId: "editing", protocolVersion: 1 });
-  assert.equal(snapshot.status, "idle", "Late observers cannot acquire a target while local editing owns it");
+  assert.equal(
+    snapshot.status,
+    "idle",
+    "Late observers cannot acquire a target while local editing owns it",
+  );
   harness.reply(target, "remote draft");
   assert.equal(harness.receipts.at(-1).status, "stale");
   await flushState();
@@ -1010,7 +1311,10 @@ test("an accepted remote answer disables timeout for the rest of the question se
   t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
   const harness = remoteHarness();
   const controller = new AbortController();
-  const execution = harness.start({ questions: [{ question: "First?" }, { question: "Second?" }] }, controller.signal);
+  const execution = harness.start(
+    { questions: [{ question: "First?" }, { question: "Second?" }] },
+    controller.signal,
+  );
   try {
     t.mock.timers.tick(200_000);
     harness.reply(harness.states.at(-1), "saved");
@@ -1024,7 +1328,10 @@ test("an accepted remote answer disables timeout for the rest of the question se
     assert.equal(harness.receipts.at(-1).status, "answered");
     const result = await execution;
     assert.equal(result.details.timedOut, false);
-    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["saved", "second answer"]);
+    assert.deepEqual(
+      result.details.answers.map((answer: any) => answer.answer),
+      ["saved", "second answer"],
+    );
     assert.equal(harness.events.listenerCount("pi-ask-question:answer"), 0);
   } finally {
     controller.abort();
@@ -1040,7 +1347,11 @@ test("abort, component disposal and shutdown/reload dispose live answer subscrip
     const target = harness.states.at(-1);
     if (close === "abort") controller.abort();
     else if (close === "dispose") harness.getCustomComponent().dispose();
-    else harness.handlers.get("session_shutdown")({ type: "session_shutdown", reason: "reload" }, harness.ctx);
+    else
+      harness.handlers.get("session_shutdown")(
+        { type: "session_shutdown", reason: "reload" },
+        harness.ctx,
+      );
     harness.reply(target, "late");
     harness.getCustomComponent().dispose();
     controller.abort();
@@ -1051,7 +1362,10 @@ test("abort, component disposal and shutdown/reload dispose live answer subscrip
       assert.equal(harness.events.listenerCount("pi-ask-question:query"), 0);
       assert.equal(harness.events.listenerCount("pi-ask-question:lookup"), 0);
     }
-    assert.deepEqual(harness.states.map((state) => state.status), ["waiting", "closed"]);
+    assert.deepEqual(
+      harness.states.map((state) => state.status),
+      ["waiting", "closed"],
+    );
     assert.deepEqual(harness.receipts, []);
   }
 });
@@ -1061,7 +1375,12 @@ test("ask_question renderCall shows count and ids, renderResult shows answers or
   const tool = harness.tools.get("ask_question");
 
   const call = tool.renderCall(
-    { questions: [{ id: "scope", question: "Scope?", options: ["a"] }, { id: "checks", question: "Checks?", options: ["x", "y"], multiSelect: true }] },
+    {
+      questions: [
+        { id: "scope", question: "Scope?", options: ["a"] },
+        { id: "checks", question: "Checks?", options: ["x", "y"], multiSelect: true },
+      ],
+    },
     harness.theme,
     harness.ctx,
   );
@@ -1071,7 +1390,10 @@ test("ask_question renderCall shows count and ids, renderResult shows answers or
   assert.match(callOut, /scope, checks/);
 
   const cancelled = tool.renderResult(
-    { content: [{ type: "text", text: "User cancelled the question." }], details: { questions: [], answers: [], cancelled: true } },
+    {
+      content: [{ type: "text", text: "User cancelled the question." }],
+      details: { questions: [], answers: [], cancelled: true },
+    },
     { expanded: false, isPartial: false },
     harness.theme,
     harness.ctx,
@@ -1097,17 +1419,30 @@ test("ask_question renderCall shows count and ids, renderResult shows answers or
 });
 
 test("ask_question returns distinct answer ids for duplicate and explicitly suffixed inputs", async () => {
-  for (const ids of [["x", "x", "x"], ["x", "x_2", "x"]]) {
+  for (const ids of [
+    ["x", "x", "x"],
+    ["x", "x_2", "x"],
+  ]) {
     const harness = fakeHarness();
     harness.setMode("rpc");
     harness.selections.push("Yes", "Yes", "Yes");
-    const result = await harness.tools.get("ask_question").execute(
-      "duplicate-ids",
-      { questions: ids.map((id) => ({ id, question: "Continue?", options: ["Yes"] })) },
-      undefined, undefined, harness.ctx,
+    const result = await harness.tools
+      .get("ask_question")
+      .execute(
+        "duplicate-ids",
+        { questions: ids.map((id) => ({ id, question: "Continue?", options: ["Yes"] })) },
+        undefined,
+        undefined,
+        harness.ctx,
+      );
+    assert.deepEqual(
+      result.details.answers.map((answer: any) => answer.id),
+      ["x", "x_2", "x_3"],
     );
-    assert.deepEqual(result.details.answers.map((answer: any) => answer.id), ["x", "x_2", "x_3"]);
-    assert.deepEqual(result.details.answers.map((answer: any) => answer.answer), ["Yes", "Yes", "Yes"]);
+    assert.deepEqual(
+      result.details.answers.map((answer: any) => answer.answer),
+      ["Yes", "Yes", "Yes"],
+    );
   }
 });
 
@@ -1126,7 +1461,12 @@ test("ask_question suffixes RPC controls past user option collisions", async () 
     "call_1",
     {
       question: "Pick?",
-      options: ["Type a custom answer", "Type a custom answer (2)", "Done selecting", "Done selecting (2)"],
+      options: [
+        "Type a custom answer",
+        "Type a custom answer (2)",
+        "Done selecting",
+        "Done selecting (2)",
+      ],
       multiSelect: true,
     },
     undefined,
@@ -1142,8 +1482,12 @@ test("ask_question suffixes RPC controls past user option collisions", async () 
     "Type a custom answer (3)",
   ]);
   assert.deepEqual(harness.dialogCalls.at(-1)?.options, [
-    "☑ Type a custom answer", "☑ Type a custom answer (2)", "☑ Done selecting", "☑ Done selecting (2)",
-    "Type a custom answer (3)", "Done selecting (3)",
+    "☑ Type a custom answer",
+    "☑ Type a custom answer (2)",
+    "☑ Done selecting",
+    "☑ Done selecting (2)",
+    "Type a custom answer (3)",
+    "Done selecting (3)",
   ]);
   assert.equal(
     result.details.answers[0]?.answer,
@@ -1154,8 +1498,20 @@ test("ask_question suffixes RPC controls past user option collisions", async () 
 test("grill-me completes on off status", () => {
   const harness = fakeHarness();
   const command = harness.commands.get("grill-me");
-  assert.deepEqual(command.getArgumentCompletions("").map((i: any) => i.value).sort(), ["off", "on", "status"]);
-  assert.deepEqual(command.getArgumentCompletions("o").map((i: any) => i.value).sort(), ["off", "on"]);
+  assert.deepEqual(
+    command
+      .getArgumentCompletions("")
+      .map((i: any) => i.value)
+      .sort(),
+    ["off", "on", "status"],
+  );
+  assert.deepEqual(
+    command
+      .getArgumentCompletions("o")
+      .map((i: any) => i.value)
+      .sort(),
+    ["off", "on"],
+  );
   assert.equal(command.getArgumentCompletions("zzz"), null);
 });
 
@@ -1164,12 +1520,16 @@ test("grill-me toggles, persists, and updates footer status", async () => {
   const command = harness.commands.get("grill-me");
 
   await command.handler("", harness.ctx);
-  assert.deepEqual(harness.entries.at(-1), { type: "custom", customType: "ask-question.grill-me", data: { enabled: true } });
+  assert.deepEqual(harness.entries.at(-1), {
+    type: "custom",
+    customType: "ask-question.grill-me",
+    data: { enabled: true },
+  });
   assert.deepEqual(harness.statuses.at(-1), { key: "ask-question.grill-me", text: "grill-mode" });
 
   const event = promptEvent();
   assert.equal(await harness.handlers.get("before_agent_start")(event, harness.ctx), undefined);
-  const guidance = event.systemPromptOptions.sections.grill_me;
+  const guidance = grillMeGuidance(event);
   assert.match(guidance, /call ask_question first/);
   assert.match(guidance, /Walk the decision tree/);
   assert.match(guidance, /reading local files, docs, tests, or command output/);
@@ -1177,7 +1537,11 @@ test("grill-me toggles, persists, and updates footer status", async () => {
   assert.match(guidance, /recommended answer as the first option/);
 
   await command.handler("off", harness.ctx);
-  assert.deepEqual(harness.entries.at(-1), { type: "custom", customType: "ask-question.grill-me", data: { enabled: false } });
+  assert.deepEqual(harness.entries.at(-1), {
+    type: "custom",
+    customType: "ask-question.grill-me",
+    data: { enabled: false },
+  });
   assert.deepEqual(harness.statuses.at(-1), { key: "ask-question.grill-me", text: undefined });
 });
 
@@ -1194,7 +1558,7 @@ test("grill-me restores last valid branch state after reload", async () => {
 
   const event = promptEvent();
   await harness.handlers.get("before_agent_start")(event, harness.ctx);
-  assert.match(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
+  assert.match(grillMeGuidance(event), /call ask_question first/);
 });
 
 test("grill-me skips footer status outside TUI", async () => {
@@ -1214,30 +1578,33 @@ test("grill-me uses ask_question with RPC UI and text without UI or an active to
   harness.setMode("rpc");
   let event = promptEvent();
   await harness.handlers.get("before_agent_start")(event, harness.ctx);
-  assert.match(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
+  assert.match(grillMeGuidance(event), /call ask_question first/);
 
   harness.setMode("print");
   event = promptEvent();
   await harness.handlers.get("before_agent_start")(event, harness.ctx);
-  assert.doesNotMatch(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
-  assert.match(event.systemPromptOptions.sections.grill_me, /ask clarifying questions first in normal text/);
+  assert.doesNotMatch(grillMeGuidance(event), /call ask_question first/);
+  assert.match(grillMeGuidance(event), /ask clarifying questions first in normal text/);
 
   harness.setMode("tui");
   harness.setActiveTools([]);
   event = promptEvent();
   await harness.handlers.get("before_agent_start")(event, harness.ctx);
-  assert.doesNotMatch(event.systemPromptOptions.sections.grill_me, /call ask_question first/);
-  assert.match(event.systemPromptOptions.sections.grill_me, /ask clarifying questions first in normal text/);
+  assert.doesNotMatch(grillMeGuidance(event), /call ask_question first/);
+  assert.match(grillMeGuidance(event), /ask clarifying questions first in normal text/);
 });
 
 test("grill-me still appends to prior full overrides", async () => {
   const harness = fakeHarness();
   await harness.commands.get("grill-me").handler("on", harness.ctx);
 
-  const result = await harness.handlers.get("before_agent_start")({
-    systemPrompt: "base",
-    systemPromptOptions: { sections: {}, forceSystemPrompt: "base" },
-  }, harness.ctx);
+  const result = await harness.handlers.get("before_agent_start")(
+    {
+      systemPrompt: "base",
+      systemPromptOptions: { sections: {}, forceSystemPrompt: "base" },
+    },
+    harness.ctx,
+  );
   assert.match(result.systemPrompt, /base/);
   assert.match(result.systemPrompt, /call ask_question first/);
 });

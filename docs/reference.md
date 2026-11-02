@@ -90,18 +90,18 @@ The configured selection-cancel binding cancels the question and reports cancell
 
 These are the default controls. The UI shows your configured bindings, except for Ctrl+O.
 
-| Action | Control |
-| --- | --- |
-| Move through choices | Up/Down |
-| Select a single answer | Enter |
-| Toggle multi-select choices | Space |
-| Move on after selecting at least one multi-select answer | Enter |
-| Switch between questions and the final review (question sets and multi-select) | Left/Right or Tab; Shift+Tab moves back |
-| Submit from the final review | Enter |
-| Read the conversation or return to the question | Ctrl+O |
-| Read long questions, choices, or reviews | PageUp/PageDown; Shift+PageUp/Shift+PageDown in fullscreen |
-| Read a long question while editing a custom answer | Shift+PageUp/Shift+PageDown |
-| Cancel the question, or return from a custom-answer edit to the choices | Escape |
+| Action                                                                         | Control                                                    |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Move through choices                                                           | Up/Down                                                    |
+| Select a single answer                                                         | Enter                                                      |
+| Toggle multi-select choices                                                    | Space                                                      |
+| Move on after selecting at least one multi-select answer                       | Enter                                                      |
+| Switch between questions and the final review (question sets and multi-select) | Left/Right or Tab; Shift+Tab moves back                    |
+| Submit from the final review                                                   | Enter                                                      |
+| Read the conversation or return to the question                                | Ctrl+O                                                     |
+| Read long questions, choices, or reviews                                       | PageUp/PageDown; Shift+PageUp/Shift+PageDown in fullscreen |
+| Read a long question while editing a custom answer                             | Shift+PageUp/Shift+PageDown                                |
+| Cancel the question, or return from a custom-answer edit to the choices        | Escape                                                     |
 
 ## Five-minute timeout
 
