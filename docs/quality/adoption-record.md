@@ -26,7 +26,7 @@
 | Tests     | node:test                                                      | `npm test`                                  |
 | Aggregate |                                                                | `npm run check`                             |
 
-Hosted CI runs a `quality` job (format, lint, tests, typecheck) and the `compatibility` job (host qualification) on every pull request and main push in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml). Lint enforcement is phased per standard Section 9.2: CI currently lints `extensions/`; repository-wide enforcement lands with the test-compliance phase.
+Hosted CI runs a `quality` job (format, lint, tests, typecheck) and the `compatibility` job (host qualification) on every pull request and main push in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml). Phased enforcement is complete: CI lints the whole repository via `npm run lint`, and `npm run check` aggregates lint before tests, typecheck, formatting, and packaging.
 
 ## Source profiles and formatter ownership
 
@@ -41,15 +41,18 @@ The repository contains no handwritten declarations, no maintained JavaScript, n
 
 Phased enforcement under standard Section 9.2. Each phase lands only when its declared scope passes the strict checks.
 
-| Phase                                                       | Status  |
-| ----------------------------------------------------------- | ------- |
-| Toolchain, baseline config, formatting, compiler strictness | Done    |
-| Source lint compliance (`extensions/`)                      | Done    |
-| Test lint compliance and repository-wide lint enforcement   | Pending |
+| Phase                                                       | Status |
+| ----------------------------------------------------------- | ------ |
+| Toolchain, baseline config, formatting, compiler strictness | Done   |
+| Source lint compliance (`extensions/`)                      | Done   |
+| Test lint compliance and repository-wide lint enforcement   | Done   |
+
+Repository-wide adoption is complete per standard Section 10.2. Quality exceptions in force: QX-001 through QX-006 in [quality-exceptions.md](quality-exceptions.md).
 
 ## Verification
 
-| Revision     | Scope                                                                                                                                         | Result                            |
-| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| this change  | `npm test` (74 passing), `npm run typecheck` (0 errors), `npm run format:check` (clean, idempotent)                                           | Passed locally; hosted CI pending |
-| source phase | `npm test` (74 passing), `npm run typecheck` (0 errors), `npx oxlint --deny-warnings extensions` (0 findings), `npm run format:check` (clean) | Passed locally; hosted CI pending |
+| Revision     | Scope                                                                                                                                                                                          | Result                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| this change  | `npm test` (74 passing), `npm run typecheck` (0 errors), `npm run format:check` (clean, idempotent)                                                                                            | Passed locally; hosted CI pending |
+| source phase | `npm test` (74 passing), `npm run typecheck` (0 errors), `npx oxlint --deny-warnings extensions` (0 findings), `npm run format:check` (clean)                                                  | Passed locally; hosted CI pending |
+| test phase   | `npm run lint` (0 findings repository-wide), `npm test` (74 passing across all three test files), `npm run typecheck` (0 errors), `npm run format:check` (clean), `npm pack --dry-run` (clean) | Passed locally; hosted CI pending |

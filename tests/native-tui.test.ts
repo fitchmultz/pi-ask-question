@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import test from "node:test";
+import { test as nodeTest } from "node:test";
 import { fileURLToPath } from "node:url";
 import type {
   BuildSystemPromptOptions,
@@ -11,6 +11,8 @@ import type {
   ExtensionRunner,
 } from "@earendil-works/pi-coding-agent";
 import type { Terminal } from "@earendil-works/pi-tui";
+import type { WaitingPromptState } from "../extensions/lib/remote-answers.ts";
+import type { Answer, AskQuestionDetails } from "../extensions/lib/types.ts";
 
 type LegacyBeforeAgentStart = (
   prompt: string,
@@ -58,19 +60,39 @@ class MemoryTerminal implements Terminal {
     this.onInput = undefined;
     this.onResize = undefined;
   }
-  async drainInput() {}
+  async drainInput() {
+    // Intentional no-op: the memory terminal has no input queue.
+  }
   write(data: string) {
     this.output += data;
   }
-  moveBy(_lines: number) {}
-  hideCursor() {}
-  showCursor() {}
-  clearLine() {}
-  clearFromCursor() {}
-  clearScreen() {}
-  setTitle(_title: string) {}
-  setProgress(_active: boolean) {}
-  setProgramStatus(_status: unknown) {}
+  moveBy(_lines: number) {
+    // Intentional no-op: tests do not observe cursor motion.
+  }
+  hideCursor() {
+    // Intentional no-op: tests do not observe cursor visibility.
+  }
+  showCursor() {
+    // Intentional no-op: tests do not observe cursor visibility.
+  }
+  clearLine() {
+    // Intentional no-op: output history stays append-only for assertions.
+  }
+  clearFromCursor() {
+    // Intentional no-op: output history stays append-only for assertions.
+  }
+  clearScreen() {
+    // Intentional no-op: output history stays append-only for assertions.
+  }
+  setTitle(_title: string) {
+    // Intentional no-op: tests do not observe terminal titles.
+  }
+  setProgress(_active: boolean) {
+    // Intentional no-op: tests do not observe progress indicators.
+  }
+  setProgramStatus(_status: unknown) {
+    // Intentional no-op: tests do not observe program status.
+  }
   send(data: string) {
     assert.ok(this.onInput, "Native TUI must own terminal input");
     this.onInput(data);
@@ -82,9 +104,101 @@ class MemoryTerminal implements Terminal {
   }
 }
 
-const nextRender = () => new Promise<void>((resolve) => setTimeout(resolve, 30));
+const nextRender = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 30);
+  });
 
-test(
+/** A published bus state: waiting details or the closed notice. */
+type BusState = WaitingPromptState | { status: "closed"; promptId: string };
+
+/** A result receipt emitted for one remote answer request. */
+type Receipt = { requestId: string; promptId: string; status: string };
+
+/** A lookup-result event as the tests read it. */
+type LookupResult = { status: string; questionId?: string; answerFingerprint?: string };
+
+/** The recorded answer at an index, asserted present. */
+function answerAt(details: AskQuestionDetails, index: number): Answer {
+  const answer = details.answers[index];
+  assert.ok(answer !== undefined);
+  return answer;
+}
+
+/** The last element of a recorded array, asserted present. */
+function lastOf<T>(values: T[]): T {
+  const value = values.at(-1);
+  assert.ok(value !== undefined);
+  return value;
+}
+
+/** Shape check for a bus state event. */
+function isBusState(value: unknown): value is BusState {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    (value.status === "waiting" || value.status === "closed")
+  );
+}
+
+/** Shape check for a result receipt event. */
+function isReceipt(value: unknown): value is Receipt {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    typeof value.status === "string" &&
+    "requestId" in value &&
+    typeof value.requestId === "string" &&
+    "promptId" in value &&
+    typeof value.promptId === "string"
+  );
+}
+
+/** Shape check for a snapshot event. */
+function isWaitingState(value: unknown): value is WaitingPromptState {
+  return isBusState(value) && value.status === "waiting";
+}
+
+/** Shape check for a lookup-result event. */
+function isLookupResult(value: unknown): value is LookupResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "status" in value &&
+    typeof value.status === "string"
+  );
+}
+
+/** The last bus state, asserted to be a waiting state. */
+function waitingState(states: BusState[]): WaitingPromptState {
+  const state = lastOf(states);
+  assert.ok(state.status === "waiting");
+  return state;
+}
+
+/** Shape check for ask_question result details. */
+function askDetails(result: { details: unknown }): AskQuestionDetails {
+  assert.ok(isAskDetails(result.details));
+  return result.details;
+}
+function isAskDetails(value: unknown): value is AskQuestionDetails {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "cancelled" in value &&
+    typeof value.cancelled === "boolean" &&
+    "timedOut" in value &&
+    typeof value.timedOut === "boolean" &&
+    "questions" in value &&
+    Array.isArray(value.questions) &&
+    "answers" in value &&
+    Array.isArray(value.answers)
+  );
+}
+
+nodeTest(
   "native ask UI answers and cancels without consuming the main editor draft",
   { timeout: 20_000 },
   async (t) => {
@@ -140,7 +254,9 @@ test(
                     },
                   });
                   api.on("before_agent_start", (event) => {
+                    // oxlint-disable-next-line eslint/no-param-reassign -- QX-002: Pi documents systemPromptOptions as mutable by handlers; these assignments verify that same supported contract from a test extension.
                     event.systemPromptOptions.cwd = otherCwd;
+                    // oxlint-disable-next-line eslint/no-param-reassign -- QX-002: same supported mutation contract, policy section.
                     event.systemPromptOptions.sections.policy = "Confirm destructive actions.";
                     promptAfterLaterExtension = event.systemPrompt;
                   });
@@ -173,28 +289,38 @@ test(
       await mode.init();
       await runtime.session.prompt("/test-ui-context");
       assert.ok(commandContext);
+      assert.ok(events !== undefined);
+      // Extensions reload reassigns both captured objects; these accessors re-read
+      // the live variables so post-reload calls hit the fresh bus and ctx.
+      const bus = (): ExtensionAPI["events"] => {
+        assert.ok(events !== undefined);
+        return events;
+      };
+      const ctx = (): ExtensionCommandContext => {
+        assert.ok(commandContext !== undefined);
+        return commandContext;
+      };
       const ui = commandContext.ui;
-      const tool = runtime.session.agent.state.tools.find((tool) => tool.name === "ask_question");
+      const tool = runtime.session.agent.state.tools.find(
+        (registered) => registered.name === "ask_question",
+      );
       assert.ok(tool, "Native loader must register and activate ask_question");
-      const renderer = () =>
-        (
-          mode as unknown as {
-            renderer: {
-              mode: "regular" | "fullscreen";
-              previousLines?: string[];
-              previousScreen?: string[];
-            };
-          }
-        ).renderer;
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- QX-006: InteractiveMode keeps renderer and switchTuiMode private (dist/modes/interactive/interactive-mode.d.ts:44,139); Pi's own native TUI tests probe them the same way, and the installed Pi release exposes no public accessor or mode-switching API.
+      const modeInternals = mode as unknown as {
+        renderer: {
+          mode: "regular" | "fullscreen";
+          previousLines?: string[];
+          previousScreen?: string[];
+        };
+        switchTuiMode: (mode: "regular" | "fullscreen") => boolean;
+      };
+      const renderer = () => modeInternals.renderer;
       const viewport = () =>
         (renderer().mode === "fullscreen"
           ? renderer().previousScreen
           : renderer().previousLines
         )?.slice(-terminal.rows) ?? [];
-      const switchMode = (next: "regular" | "fullscreen") =>
-        (
-          mode as unknown as { switchTuiMode: (mode: "regular" | "fullscreen") => boolean }
-        ).switchTuiMode(next);
+      const switchMode = (next: "regular" | "fullscreen") => modeInternals.switchTuiMode(next);
       assert.equal(renderer().mode, "fullscreen", "Pi 1.0 defaults to fullscreen");
 
       await t.test("grill-me preserves instructions added by a later extension", async () => {
@@ -306,10 +432,7 @@ test(
             }
             terminal.send("\r");
             const result = await execution;
-            assert.equal(
-              (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
-              "First",
-            );
+            assert.equal(answerAt(askDetails(result), 0).answer, "First");
           } finally {
             controller.abort();
             await execution;
@@ -338,7 +461,7 @@ test(
               assert.ok(viewport().some((line) => line.includes("return to question")));
               controller.abort();
               const result = await execution;
-              assert.equal((result.details as { cancelled: boolean }).cancelled, true);
+              assert.equal(askDetails(result).cancelled, true);
               terminal.send("!");
               assert.equal(ui.getEditorText(), "saved draft!");
             } finally {
@@ -350,18 +473,18 @@ test(
         );
       }
 
-      for (const [tuiMode, action] of (["fullscreen", "regular"] as const).flatMap((mode) =>
-        (["answer", "escape", "abort"] as const).map((action) => [mode, action] as const),
+      for (const [tuiMode, modeAction] of (["fullscreen", "regular"] as const).flatMap((uiMode) =>
+        (["answer", "escape", "abort"] as const).map((uiAction) => [uiMode, uiAction] as const),
       )) {
         switchMode(tuiMode);
-        await t.test(`${tuiMode} ${action}`, async () => {
+        await t.test(` `, async () => {
           ui.setEditorText("untouched draft");
           // Let the native differential renderer remove the previous dialog first.
           await nextRender();
           terminal.output = "";
           const controller = new AbortController();
           const execution = tool.execute(
-            `native-${action}`,
+            `native-`,
             {
               question: "Native choice?",
               options: ["First", "Second"],
@@ -372,22 +495,21 @@ test(
             await nextRender();
             assert.match(terminal.output, /Native choice\?/);
             // These bytes go through Pi's real terminal dispatcher and focus routing.
-            if (action === "answer") {
+            if (modeAction === "answer") {
               terminal.send("\x1b[B");
               terminal.send("\r");
-            } else if (action === "escape") terminal.send("\x1b");
-            else controller.abort();
+            } else if (modeAction === "escape") {
+              terminal.send("\x1b");
+            } else {
+              controller.abort();
+            }
             const result = await execution;
-            const details = result.details as {
-              cancelled: boolean;
-              timedOut: boolean;
-              answers: { answer: string }[];
-            };
-            assert.equal(details.cancelled, action !== "answer");
+            const details = askDetails(result);
+            assert.equal(details.cancelled, modeAction !== "answer");
             assert.equal(details.timedOut, false);
             assert.deepEqual(
               details.answers.map((answer) => answer.answer),
-              action === "answer" ? ["Second"] : [],
+              modeAction === "answer" ? ["Second"] : [],
             );
             assert.equal(ui.getEditorText(), "untouched draft");
             terminal.send("!");
@@ -410,21 +532,25 @@ test(
           async () => {
             ui.setEditorText("untouched remote draft");
             const controller = new AbortController();
-            const states: any[] = [];
-            const snapshots: any[] = [];
-            const lookups: any[] = [];
-            const receipts: any[] = [];
-            const unsubscribeState = events!.on("pi-ask-question:state", (state) => {
-              states.push(state);
+            const states: BusState[] = [];
+            const snapshots: WaitingPromptState[] = [];
+            const lookups: LookupResult[] = [];
+            const receipts: Receipt[] = [];
+            const unsubscribeState = bus().on("pi-ask-question:state", (data) => {
+              assert.ok(isBusState(data));
+              states.push(data);
             });
-            const unsubscribeResult = events!.on("pi-ask-question:result", (receipt) => {
-              receipts.push(receipt);
+            const unsubscribeResult = bus().on("pi-ask-question:result", (data) => {
+              assert.ok(isReceipt(data));
+              receipts.push(data);
             });
-            const unsubscribeSnapshot = events!.on("pi-ask-question:snapshot", (state) => {
-              snapshots.push(state);
+            const unsubscribeSnapshot = bus().on("pi-ask-question:snapshot", (data) => {
+              assert.ok(isWaitingState(data));
+              snapshots.push(data);
             });
-            const unsubscribeLookup = events!.on("pi-ask-question:lookup-result", (state) => {
-              lookups.push(state);
+            const unsubscribeLookup = bus().on("pi-ask-question:lookup-result", (data) => {
+              assert.ok(isLookupResult(data));
+              lookups.push(data);
             });
             const execution = tool.execute(
               "native-remote",
@@ -443,52 +569,49 @@ test(
             );
             try {
               await nextRender();
-              events!.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "late-native" });
-              const initial = snapshots.at(-1);
+              bus().emit("pi-ask-question:query", { protocolVersion: 1, queryId: "late-native" });
+              const initial = lastOf(snapshots);
               assert.equal(initial.status, "waiting");
               assert.equal(initial.nativeRoot, runtime.session.sessionManager.getSessionId());
-              assert.equal(initial.deadline, states.at(-1).deadline);
+              assert.equal(initial.deadline, waitingState(states).deadline);
               assert.ok(initial.deadline > Date.now() && initial.deadline <= Date.now() + 300_000);
               assert.ok(viewport().some((line) => line.includes("Remote first?")));
-              events!.emit("pi-ask-question:answer", {
+              bus().emit("pi-ask-question:answer", {
                 ...initial,
                 requestId: "native-first",
                 answer: "Yes",
               });
               await nextRender();
-              const next = states.at(-1);
+              const next = waitingState(states);
               assert.equal(next.questionId, "many");
               assert.ok(
                 viewport().some((line) => line.includes("Remote parts?")),
                 "Native UI advances to the real next question",
               );
-              events!.emit("pi-ask-question:answer", {
+              bus().emit("pi-ask-question:answer", {
                 ...initial,
                 requestId: "native-stale",
                 answer: "wrong",
               });
-              assert.equal(receipts.at(-1).status, "stale");
-              events!.emit("pi-ask-question:answer", {
+              assert.equal(lastOf(receipts).status, "stale");
+              bus().emit("pi-ask-question:answer", {
                 ...next,
                 requestId: "native-last",
                 answer: ["B, C", "A"],
               });
               const result = await execution;
-              const details = result.details as {
-                cancelled: boolean;
-                answers: { answer: string; wasCustom: boolean; selectedOptions?: string[] }[];
-              };
+              const details = askDetails(result);
               assert.equal(details.cancelled, false);
-              assert.equal(details.answers[0]?.answer, "Yes");
+              assert.equal(answerAt(details, 0).answer, "Yes");
               assert.equal(
-                details.answers[0]?.wasCustom,
+                answerAt(details, 0).wasCustom,
                 true,
                 "An exact option string is still literal custom input",
               );
-              assert.deepEqual(details.answers[1]?.selectedOptions, ["B, C", "A"]);
-              assert.equal(receipts.at(-1)?.status, "answered");
+              assert.deepEqual(answerAt(details, 1).selectedOptions, ["B, C", "A"]);
+              assert.equal(lastOf(receipts).status, "answered");
               receipts.length = 0;
-              events!.emit("pi-ask-question:lookup", {
+              bus().emit("pi-ask-question:lookup", {
                 protocolVersion: 1,
                 queryId: "lost-native-result",
                 nativeRoot: initial.nativeRoot,
@@ -496,14 +619,14 @@ test(
                 promptId: initial.promptId,
                 requestId: "native-last",
               });
-              assert.equal(lookups.at(-1).status, "answered");
-              assert.equal(lookups.at(-1).questionId, "many");
-              assert.equal(states.at(-1).status, "closed");
+              assert.equal(lastOf(lookups).status, "answered");
+              assert.equal(lastOf(lookups).questionId, "many");
+              assert.equal(lastOf(states).status, "closed");
               assert.equal(ui.getEditorText(), "untouched remote draft");
               terminal.send("!");
               assert.equal(ui.getEditorText(), "untouched remote draft!");
               const receiptCount = receipts.length;
-              events!.emit("pi-ask-question:answer", {
+              bus().emit("pi-ask-question:answer", {
                 ...next,
                 requestId: "native-last",
                 answer: ["A"],
@@ -527,50 +650,53 @@ test(
 
       for (const tuiMode of ["fullscreen", "regular"] as const) {
         switchMode(tuiMode);
-        await t.test(`${tuiMode} preserves typed answers past the original deadline`, async (t) => {
-          let now = Date.now();
-          t.mock.method(Date, "now", () => now);
-          const controller = new AbortController();
-          const snapshots: any[] = [];
-          const unsubscribe = events!.on("pi-ask-question:snapshot", (state) => {
-            snapshots.push(state);
-          });
-          const execution = tool.execute(
-            "native-timeout",
-            {
-              questions: [{ question: "Details?" }, { question: "Next?", options: ["Continue"] }],
-            },
-            controller.signal,
-          );
-          try {
-            await nextRender();
-            terminal.send("\r");
-            terminal.send("A lengthy answer");
-            await nextRender();
-            assert.ok(viewport().some((line) => line.includes("No time limit while you answer.")));
-            now += 300_001;
-            terminal.send("\r");
-            await nextRender();
-            events!.emit("pi-ask-question:query", { protocolVersion: 1, queryId: "after-typing" });
-            assert.equal(snapshots.at(-1).status, "waiting");
-            assert.equal(snapshots.at(-1).timeoutActive, false);
-            terminal.send("\r");
-            terminal.send("\r");
-            const details = (await execution).details as {
-              timedOut: boolean;
-              answers: { answer: string }[];
-            };
-            assert.equal(details.timedOut, false);
-            assert.deepEqual(
-              details.answers.map((answer) => answer.answer),
-              ["A lengthy answer", "Continue"],
+        await t.test(
+          `${tuiMode} preserves typed answers past the original deadline`,
+          async (sub) => {
+            let now = Date.now();
+            sub.mock.method(Date, "now", () => now);
+            const controller = new AbortController();
+            const snapshots: WaitingPromptState[] = [];
+            const unsubscribe = bus().on("pi-ask-question:snapshot", (data) => {
+              assert.ok(isWaitingState(data));
+              snapshots.push(data);
+            });
+            const execution = tool.execute(
+              "native-timeout",
+              {
+                questions: [{ question: "Details?" }, { question: "Next?", options: ["Continue"] }],
+              },
+              controller.signal,
             );
-          } finally {
-            controller.abort();
-            await execution;
-            unsubscribe();
-          }
-        });
+            try {
+              await nextRender();
+              terminal.send("\r");
+              terminal.send("A lengthy answer");
+              await nextRender();
+              assert.ok(
+                viewport().some((line) => line.includes("No time limit while you answer.")),
+              );
+              now += 300_001;
+              terminal.send("\r");
+              await nextRender();
+              bus().emit("pi-ask-question:query", { protocolVersion: 1, queryId: "after-typing" });
+              assert.equal(lastOf(snapshots).status, "waiting");
+              assert.equal(lastOf(snapshots).timeoutActive, false);
+              terminal.send("\r");
+              terminal.send("\r");
+              const details = askDetails(await execution);
+              assert.equal(details.timedOut, false);
+              assert.deepEqual(
+                details.answers.map((answer) => answer.answer),
+                ["A lengthy answer", "Continue"],
+              );
+            } finally {
+              controller.abort();
+              await execution;
+              unsubscribe();
+            }
+          },
+        );
       }
 
       for (const tuiMode of ["fullscreen", "regular"] as const) {
@@ -616,15 +742,15 @@ test(
               await nextRender();
               assertVisible("Native choice 01");
               terminal.resize(24);
-              for (let index = 0; index < 29; index += 1) terminal.send("\x1b[B");
+              for (let index = 0; index < 29; index += 1) {
+                terminal.send("\x1b[B");
+              }
               await nextRender();
               assertVisible("Native choice 30");
               terminal.send("\r");
               const result = await execution;
               assert.deepEqual(
-                (result.details as { answers: { answer: string }[] }).answers.map(
-                  (answer) => answer.answer,
-                ),
+                askDetails(result).answers.map((answer) => answer.answer),
                 ["Native choice 30"],
               );
               assert.equal(ui.getEditorText(), "untouched draft");
@@ -672,7 +798,9 @@ test(
                 (line) => line.includes(">") && line.includes("Fullscreen choice 01"),
               ),
             );
-            for (let index = 0; index < 29; index += 1) terminal.send("\x1b[B");
+            for (let index = 0; index < 29; index += 1) {
+              terminal.send("\x1b[B");
+            }
             await nextRender();
             assert.ok(
               viewport().some(
@@ -681,10 +809,7 @@ test(
             );
             terminal.send("\r");
             const result = await execution;
-            assert.equal(
-              (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
-              "Fullscreen choice 30",
-            );
+            assert.equal(answerAt(askDetails(result), 0).answer, "Fullscreen choice 30");
           } finally {
             controller.abort();
             await execution;
@@ -729,7 +854,9 @@ test(
               viewport().some((line) => line.includes("Current answer:") && line.includes("…")),
               "Selected answers still have a compact preview",
             );
-            for (let index = 0; index < 10; index += 1) terminal.send("\x1b[B");
+            for (let index = 0; index < 10; index += 1) {
+              terminal.send("\x1b[B");
+            }
             terminal.send("\r");
             terminal.send("SPECIAL-CUSTOM");
             terminal.send("\r");
@@ -744,7 +871,7 @@ test(
             terminal.send("\r");
             const result = await execution;
             assert.equal(
-              (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
+              answerAt(askDetails(result), 0).answer,
               `${options.slice(0, 20).join(", ")}, SPECIAL-CUSTOM`,
             );
           } finally {
@@ -834,9 +961,7 @@ test(
             terminal.send("\r");
             const result = await execution;
             assert.deepEqual(
-              (result.details as { answers: { answer: string }[] }).answers.map(
-                (entry) => entry.answer,
-              ),
+              askDetails(result).answers.map((entry) => entry.answer),
               [answer.trim(), "Yes"],
             );
           } finally {
@@ -860,7 +985,9 @@ test(
         const answer = `${"word ".repeat(250)}EDIT-END-MARKER`;
         try {
           await nextRender();
-          for (let index = 0; index < 30; index += 1) terminal.send("\x1b[B");
+          for (let index = 0; index < 30; index += 1) {
+            terminal.send("\x1b[B");
+          }
           terminal.send("\r");
           terminal.send(answer);
           await nextRender();
@@ -900,9 +1027,7 @@ test(
           terminal.send("\r");
           const result = await execution;
           assert.deepEqual(
-            (result.details as { answers: { answer: string }[] }).answers.map(
-              (entry) => entry.answer,
-            ),
+            askDetails(result).answers.map((entry) => entry.answer),
             [answer],
           );
           assert.equal(ui.getEditorText(), "untouched draft");
@@ -962,17 +1087,16 @@ test(
               );
               terminal.send("\r");
               const result = await execution;
-              assert.equal(
-                (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
-                longChoice,
-              );
+              assert.equal(answerAt(askDetails(result), 0).answer, longChoice);
             } finally {
               controller.abort();
               await execution;
             }
           }
         } finally {
-          if (renderer().mode === "fullscreen") switchMode("regular");
+          if (renderer().mode === "fullscreen") {
+            switchMode("regular");
+          }
           terminal.resize(40);
         }
       });
@@ -1039,10 +1163,7 @@ test(
                 );
                 terminal.send("\r");
                 const result = await execution;
-                assert.equal(
-                  (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
-                  "Choice 1",
-                );
+                assert.equal(answerAt(askDetails(result), 0).answer, "Choice 1");
               } finally {
                 controller.abort();
                 await execution;
@@ -1056,13 +1177,15 @@ test(
               );
               try {
                 await nextRender();
-                for (let index = 0; index < 30; index += 1) terminal.send("\x1b[B");
+                for (let index = 0; index < 30; index += 1) {
+                  terminal.send("\x1b[B");
+                }
                 terminal.send("\r");
                 terminal.send("Draft work");
                 await nextRender();
                 const firstPage = viewport().find((line) => line.includes("Q 1-"));
                 assert.ok(
-                  firstPage?.includes("Shift+PageUp"),
+                  firstPage !== undefined && firstPage.includes("Shift+PageUp"),
                   "The distinct edit-mode question shortcut is visible",
                 );
                 assert.ok(
@@ -1100,17 +1223,16 @@ test(
                 );
                 terminal.send("\r");
                 const result = await editExecution;
-                assert.equal(
-                  (result.details as { answers: { answer: string }[] }).answers[0]?.answer,
-                  "Draft work",
-                );
+                assert.equal(answerAt(askDetails(result), 0).answer, "Draft work");
               } finally {
                 editController.abort();
                 await editExecution;
               }
             }
           } finally {
-            if (renderer().mode === "fullscreen") switchMode("regular");
+            if (renderer().mode === "fullscreen") {
+              switchMode("regular");
+            }
             terminal.resize(40, 80);
           }
         },
@@ -1119,25 +1241,28 @@ test(
       await t.test(
         "native reload closes an active cooperative owner and never reuses its reply target",
         async () => {
-          const oldStates: any[] = [];
-          const unsubscribeOld = events!.on("pi-ask-question:state", (state) => {
-            oldStates.push(state);
+          const oldStates: BusState[] = [];
+          const unsubscribeOld = bus().on("pi-ask-question:state", (data) => {
+            assert.ok(isBusState(data));
+            oldStates.push(data);
           });
           const execution = tool.execute("remote-reload", { question: "Before reload?" });
           await nextRender();
-          const oldTarget = oldStates.at(-1);
+          const oldTarget = lastOf(oldStates);
           assert.equal(oldTarget.status, "waiting");
-          await commandContext!.reload();
-          assert.equal(((await execution).details as { cancelled: boolean }).cancelled, true);
-          assert.equal(oldStates.at(-1).status, "closed");
+          await ctx().reload();
+          assert.equal(askDetails(await execution).cancelled, true);
+          assert.equal(lastOf(oldStates).status, "closed");
           unsubscribeOld();
           await runtime.session.prompt("/test-ui-context");
           const freshTool = runtime.session.agent.state.tools.find(
-            (tool) => tool.name === "ask_question",
-          )!;
-          const states: any[] = [];
-          const unsubscribe = events!.on("pi-ask-question:state", (state) => {
-            states.push(state);
+            (registered) => registered.name === "ask_question",
+          );
+          assert.ok(freshTool !== undefined, "Reloaded agent must re-register ask_question");
+          const states: BusState[] = [];
+          const unsubscribe = bus().on("pi-ask-question:state", (data) => {
+            assert.ok(isBusState(data));
+            states.push(data);
           });
           const controller = new AbortController();
           const fresh = freshTool.execute(
@@ -1147,24 +1272,25 @@ test(
           );
           try {
             await nextRender();
-            const target = states.at(-1);
+            const target = waitingState(states);
             assert.notEqual(target.promptId, oldTarget.promptId);
             assert.notEqual(target.ownerGeneration, oldTarget.ownerGeneration);
-            const lookups: any[] = [];
-            const unsubscribeLookup = events!.on("pi-ask-question:lookup-result", (data) => {
+            const lookups: LookupResult[] = [];
+            const unsubscribeLookup = bus().on("pi-ask-question:lookup-result", (data) => {
+              assert.ok(isLookupResult(data));
               lookups.push(data);
             });
             try {
-              events!.emit("pi-ask-question:lookup", {
+              bus().emit("pi-ask-question:lookup", {
                 ...oldTarget,
                 queryId: "old-generation",
                 requestId: "expired",
               });
-              assert.equal(lookups.at(-1).status, "stale");
+              assert.equal(lastOf(lookups).status, "stale");
             } finally {
               unsubscribeLookup();
             }
-            events!.emit("pi-ask-question:answer", {
+            bus().emit("pi-ask-question:answer", {
               ...oldTarget,
               requestId: "expired",
               answer: "wrong",
@@ -1174,15 +1300,12 @@ test(
               viewport().some((line) => line.includes("After reload?")),
               "Stale delivery cannot close the new owner",
             );
-            events!.emit("pi-ask-question:answer", {
+            bus().emit("pi-ask-question:answer", {
               ...target,
               requestId: "fresh",
               answer: "fresh answer",
             });
-            assert.equal(
-              ((await fresh).details as { answers: { answer: string }[] }).answers[0]?.answer,
-              "fresh answer",
-            );
+            assert.equal(answerAt(askDetails(await fresh), 0).answer, "fresh answer");
           } finally {
             controller.abort();
             await fresh;
@@ -1195,10 +1318,11 @@ test(
         "grill-me follows tree, fork, resume and reload on the native runtime",
         async () => {
           await runtime.session.prompt("/grill-me on");
-          const enabledEntry = runtime.session.sessionManager.getLeafId()!;
+          const enabledEntry = runtime.session.sessionManager.getLeafId();
+          assert.ok(enabledEntry !== null, "grill-me status needs a leaf session");
           await runtime.session.prompt("/grill-me off");
           assert.equal(
-            (await commandContext!.navigateTree(enabledEntry, { summarize: false })).cancelled,
+            (await ctx().navigateTree(enabledEntry, { summarize: false })).cancelled,
             false,
           );
           const assertEnabled = async () => {
@@ -1210,7 +1334,7 @@ test(
           };
           await assertEnabled();
 
-          const outgoing = commandContext!;
+          const outgoing = ctx();
           assert.equal(
             (
               await outgoing.fork(enabledEntry, {
@@ -1235,10 +1359,10 @@ test(
               .map((entry) => JSON.stringify(entry))
               .join("\n") + "\n",
           );
-          assert.equal((await commandContext!.switchSession(journal)).cancelled, false);
+          assert.equal((await ctx().switchSession(journal)).cancelled, false);
           await runtime.session.prompt("/test-ui-context");
           await assertEnabled();
-          await commandContext!.reload();
+          await ctx().reload();
           await runtime.session.prompt("/test-ui-context");
           await assertEnabled();
           await runtime.session.prompt("/grill-me off");
@@ -1251,8 +1375,11 @@ test(
           await cleanup?.();
         } finally {
           for (const [key, value] of Object.entries(previous)) {
-            if (value === undefined) delete process.env[key];
-            else process.env[key] = value;
+            if (value === undefined) {
+              delete process.env[key];
+            } else {
+              process.env[key] = value;
+            }
           }
           rmSync(home, { recursive: true, force: true });
         }

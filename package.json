@@ -37,7 +37,7 @@
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "check:compat": "npm run check",
-    "check": "npm test && npm run typecheck && npm run format:check && npm pack --dry-run",
+    "check": "npm run lint && npm test && npm run typecheck && npm run format:check && npm pack --dry-run",
     "prepublishOnly": "npm run check"
   },
   "files": [
