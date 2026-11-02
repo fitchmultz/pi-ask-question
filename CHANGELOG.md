@@ -10,8 +10,8 @@
 - Use direct Flash for automatic release remediation (#55) ([1d83a5e](https://github.com/fitchmultz/pi-ask-question/commit/1d83a5e551215db5318ac4f4f0ae37f8ac1af49c))
 
 ### What's Changed
-* Use direct Flash for necessary release remediation by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/55
 
+- Use direct Flash for necessary release remediation by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/55
 
 **Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.3...v0.6.4
 
@@ -23,23 +23,25 @@
 - Pin reviewed release source binding (#53) ([c5201e4](https://github.com/fitchmultz/pi-ask-question/commit/c5201e4fd8d10799b5db05e90fb25d7ac644003f))
 
 ### What's Changed
-* Bind automatic releases to the reviewed version by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/53
 
+- Bind automatic releases to the reviewed version by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/53
 
 **Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.2...v0.6.3
 
 ## 0.6.2 - 2026-10-31
 
 <!-- npm-release:unreleased:start -->
+
 - Clarify compatibility and release guidance and remove outdated Git-only advice for the cooperative question bridge.
+
 <!-- npm-release:unreleased:end -->
 
 - Automate reviewed npm patch releases (#51) ([e00bcb5](https://github.com/fitchmultz/pi-ask-question/commit/e00bcb54c99e0144ff0bfdc2249bfeef350ac413))
 
 ### What's Changed
-* Clarify compatibility and release guidance by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/50
-* Automate reviewed npm patch releases by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/51
 
+- Clarify compatibility and release guidance by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/50
+- Automate reviewed npm patch releases by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/51
 
 **Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.1...v0.6.2
 

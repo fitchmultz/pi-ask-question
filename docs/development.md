@@ -13,13 +13,17 @@ pi -e ./extensions/ask-question.ts
 
 The publishable implementation is [`extensions/ask-question.ts`](../extensions/ask-question.ts). Use `/reload` after code changes; restart Pi after dependency or host-runtime changes.
 
+## Quality toolchain
+
+[The Strict Oxlint and Oxfmt Engineering Standard](strict-oxlint-oxfmt-standard.md) governs lint, format, typechecking, and verification; [docs/quality/](quality/) holds the adoption and exception records. `npm run lint` runs Oxlint with type-aware rules (via `oxlint-tsgolint`), `npm run format`/`format:check` run Oxfmt, and `npm run lint:fix` applies safe lint fixes.
+
 ## Check a change
 
 ```bash
 npm run check:compat # all behavior tests + typecheck + pack dry-run
 ```
 
-`check:compat` delegates to `npm run check`, which runs the behavior tests, TypeScript checking, and an npm pack dry-run. No production build or `prepare` is needed.
+`check:compat` delegates to `npm run check`, which runs the behavior tests, TypeScript checking, the Oxfmt format check, and an npm pack dry-run. No production build or `prepare` is needed.
 
 ### Test coverage
 

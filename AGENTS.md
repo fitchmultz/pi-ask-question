@@ -1,5 +1,9 @@
 # Project instructions
 
+## Quality standard
+
+This repository follows the [Strict Oxlint and Oxfmt Engineering Standard](docs/strict-oxlint-oxfmt-standard.md). The normal acceptance command is `npm run check`. Relaxing any applicable rule, option, or threshold requires a recorded quality exception under that standard's Section 2 in [docs/quality/quality-exceptions.md](docs/quality/quality-exceptions.md).
+
 ## Dependency maintenance
 
 - Frequently and proactively check releases and make appropriate upgrades across maintained packages and all runtime, development, build, test, and tool dependencies, prioritizing the latest stable official Pi and the intended maintained Pi fork. Routine in-scope maintenance needs no repeated approval; delivery remains subject to existing authority and gates.
