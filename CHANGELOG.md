@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.10 - 2026-11-03
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Skip no-op releases and restate malformed remediation dispositions (#68) ([8eeea30](https://github.com/fitchmultz/pi-ask-question/commit/8eeea307ecb51bcfdb7f205d27c606df337fee32))
+
+### What's Changed
+
+- Skip no-op releases and restate malformed remediation dispositions by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/68
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.9...v0.6.10
+
 ## 0.6.9 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
