@@ -111,9 +111,9 @@ In RPC mode, Pi receives a response only when the client submits or cancels a di
 
 At timeout, the tool returns:
 
-> Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.
+> Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.
 
-It reports `timedOut: true`, not cancellation, and does not select an option or invent a user answer.
+It reports `timedOut: true`, not cancellation, and does not select an option, invent a user answer, or supply missing approval.
 
 The timeout closes the TUI question and stops server-side waiting in RPC mode. RPC clients are responsible for dismissing their own dialogs; Pi does not send a dismissal event.
 
