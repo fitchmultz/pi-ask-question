@@ -33,7 +33,7 @@ Escape leaves the custom answer editor; otherwise, it cancels the question. Your
 
 ## Limits
 
-An untouched question times out after five minutes, and the agent receives an AFK reply to continue already-authorized work without treating the timeout as missing approval. Once you interact, there is no time limit for that question or question set. Each new call starts its own timer.
+An untouched question times out after five minutes, and the agent receives an AFK reply to continue already-authorized work without treating the timeout as approval. Once you interact, there is no time limit for that question or question set. Each new call starts its own timer.
 
 In RPC mode, Pi learns about interaction when the client submits a dialog choice; navigating an unsubmitted dialog is not visible to Pi.
 

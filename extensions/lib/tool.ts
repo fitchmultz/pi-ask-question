@@ -91,7 +91,7 @@ export function createAskQuestionTool(
     name: "ask_question",
     label: "Ask Question",
     description:
-      "Ask the user one or more clarifying questions through pi's UI. After 5 minutes without interaction, returns an AFK reply so you can continue already-authorized work without treating silence as missing approval.",
+      "Ask the user one or more clarifying questions through pi's UI. After 5 minutes without interaction, returns an AFK reply so you can continue already-authorized work without treating silence as approval.",
     promptSnippet: "Ask the user clarifying questions through pi's UI",
     promptGuidelines: [
       "For ask_question, list options from most recommended to least; the first option is the recommended choice, and do not label it as recommended.",
