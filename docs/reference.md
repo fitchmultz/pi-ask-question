@@ -111,7 +111,7 @@ In RPC mode, Pi receives a response only when the client submits or cancels a di
 
 At timeout, the tool returns:
 
-> Mitch is currently AFK. A timeout does not grant missing approval; continue already-authorized work and use your best judgement for routine choices.
+> Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.
 
 It reports `timedOut: true`, not cancellation, and does not select an option, invent a user answer, or supply missing approval.
 

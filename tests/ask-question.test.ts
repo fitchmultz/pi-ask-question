@@ -993,7 +993,7 @@ nodeTest(
     assert.equal(controller.signal.aborted, false);
     assert.equal(
       contentText(result),
-      "Timed out after 5 minutes. Mitch is currently AFK. A timeout does not grant missing approval; continue already-authorized work and use your best judgement for routine choices.",
+      "Timed out after 5 minutes. Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.",
     );
     const rendered = tool
       .renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx)
