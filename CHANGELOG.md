@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.11 - 2026-11-08
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Clarify that an AFK timeout does not supply missing approval (#70) ([c5d3116](https://github.com/fitchmultz/pi-ask-question/commit/c5d3116d5851e208e022fc99feb5ac78f3f0dbf3))
+
+### What's Changed
+
+- Clarify that an AFK timeout does not supply missing approval by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/70
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.10...v0.6.11
+
 ## 0.6.10 - 2026-11-03
 
 <!-- npm-release:unreleased:start -->
