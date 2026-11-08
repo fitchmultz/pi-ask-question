@@ -48,7 +48,7 @@ export type QuestionTimeout = {
 
 export const QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
 export const TIMEOUT_MESSAGE =
-  "Mitch is currently AFK. Use your best judgement to choose the option Mitch would choose.";
+  "Mitch is currently AFK. A timeout does not grant missing approval; continue already-authorized work and use your best judgement for routine choices.";
 export const CUSTOM_OPTION = "Type a custom answer";
 export const DONE_OPTION = "Done selecting";
 export const MAX_REMOTE_ANSWER_LENGTH = 16_384;
