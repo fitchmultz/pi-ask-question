@@ -31,13 +31,11 @@ type AskTool = {
     onUpdate: ((update: unknown) => void) | undefined,
     ctx: unknown,
   ) => Promise<AgentToolResult<AskQuestionDetails>>;
-  readonly renderCall: (
-    args: Static<typeof AskQuestionParams>,
-    theme: unknown,
-    context: unknown,
-  ) => Component;
+  /** Pi passes the model's raw arguments, before validation. */
+  readonly renderCall: (args: unknown, theme: unknown, context: unknown) => Component;
+  /** Pi passes its own result, without question details, for a call that failed or never ran. */
   readonly renderResult: (
-    result: AgentToolResult<AskQuestionDetails>,
+    result: Pick<AgentToolResult<unknown>, "content" | "details">,
     options: unknown,
     theme: unknown,
     context: unknown,
@@ -1786,6 +1784,63 @@ nodeTest(
     assert.match(out, /Yes/);
   },
 );
+
+nodeTest("ask_question result card shows the error text of a failed call", () => {
+  const harness = fakeHarness();
+  const tool = askTool(harness);
+  const validationError = [
+    'Validation failed for tool "ask_question":',
+    "  - questions.0: expected object, got string",
+    "",
+    "Received arguments:",
+    "{",
+    '  "questions": "[{\\"id\\": \\"cache_deletion\\", \\"question\\": \\"Delete the caches?\\"}]"',
+    "}",
+  ].join("\n");
+
+  // Results as Pi builds them: execute threw, validation rejected the arguments, the response was aborted.
+  for (const [text, details] of [
+    ["ask_question needs Pi TUI or RPC UI support.", {}],
+    [validationError, {}],
+    ["Operation aborted", undefined],
+  ] as const) {
+    const card = tool.renderResult(
+      { content: [{ type: "text", text }], details },
+      { expanded: false, isPartial: false },
+      harness.theme,
+      { isError: true },
+    );
+    assert.equal(
+      card
+        .render(120)
+        .map((line) => line.trimEnd())
+        .join("\n"),
+      text,
+    );
+  }
+});
+
+nodeTest("ask_question call card counts questions in arguments Pi has not validated", () => {
+  const harness = fakeHarness();
+  const tool = askTool(harness);
+  const header = (args: unknown) =>
+    tool.renderCall(args, harness.theme, harness.ctx).render(80).join("\n").trimEnd();
+
+  // Pi turns these strings into a one-option list and a boolean, then runs the call.
+  assert.equal(
+    header({
+      multiSelect: "false",
+      options: '["Yes", "Only the two biggest", "Skip for now"]',
+      question: "Delete the caches?",
+    }),
+    "ask_question 1 question (question_1)",
+  );
+  // Pi rejects this call: the question list is one string.
+  assert.equal(
+    header({ questions: '[{"id": "cache_deletion", "question": "Delete the caches?"}]' }),
+    "ask_question 0 questions",
+  );
+});
 
 nodeTest(
   "ask_question returns distinct answer ids for duplicate and explicitly suffixed inputs",
