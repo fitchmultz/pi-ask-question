@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.13 - 2026-11-10
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Draw the ask_question card for failed calls and for list arguments sent as strings (#74) ([d11944d](https://github.com/fitchmultz/pi-ask-question/commit/d11944dbe7893bd8ba26b91ebba0fa9b49211dc1))
+
+### What's Changed
+
+- Draw the ask_question card for failed calls and for list arguments sent as strings by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/74
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.12...v0.6.13
+
 ## 0.6.12 - 2026-11-10
 
 <!-- npm-release:unreleased:start -->
