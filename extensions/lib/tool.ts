@@ -13,7 +13,7 @@ import { askWithDialogs } from "./ask-dialogs.ts";
 import { askWithKeyboard } from "./ask-keyboard.ts";
 import { formatAnswer, normalize, summarize } from "./normalize.ts";
 import type { QuestionObserver } from "./question-observer.ts";
-import { AskQuestionParams } from "./schema.ts";
+import { AskQuestionParams, prepareAskQuestionArguments } from "./schema.ts";
 import { exactText } from "./text.ts";
 import {
   QUESTION_TIMEOUT_MS,
@@ -50,10 +50,11 @@ function createQuestionTimeout(): {
 
 /**
  * Pi draws the call from the model's arguments before it validates them, so a list field can hold
- * another type. The header shows the questions that have text and their ids, and reads no options.
+ * another type. A list sent as one JSON string is read as the tool reads it. The header shows the
+ * questions that have text and their ids, and reads no options.
  */
 function renderAskCall(args: Static<typeof AskQuestionParams>, theme: Theme): Component {
-  const { options: _options, questions: list, ...single } = args;
+  const { options: _options, questions: list, ...single } = prepareAskQuestionArguments(args);
   const questions = normalize(
     Array.isArray(list)
       ? { ...single, questions: list.map(({ options: _nested, ...shown }) => shown) }
@@ -119,6 +120,7 @@ export function createAskQuestionTool(
       "For ask_question, a typed custom-answer option is added automatically; do not include your own.",
     ],
     parameters: AskQuestionParams,
+    prepareArguments: prepareAskQuestionArguments,
     executionMode: "sequential",
 
     // oxlint-disable-next-line eslint/max-params -- QX-001: defineTool's execute callback signature is fixed by the Pi SDK at five parameters.

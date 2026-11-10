@@ -1733,6 +1733,30 @@ nodeTest(
   },
 );
 
+// The list strings have the form a local model sent them in; the question wording is shortened.
+nodeTest("ask_question call card counts the questions of a list sent as one JSON string", () => {
+  const harness = fakeHarness();
+  const tool = askTool(harness);
+  const header = (args: unknown) =>
+    tool.renderCall(args, harness.theme, harness.ctx).render(80).join("\n").trimEnd();
+
+  assert.equal(
+    header({
+      multiSelect: "false",
+      options: '["Yes — delete the full listed set (~51G)", "Skip for now"]',
+      question: "Approve deleting rebuildable caches?",
+    }),
+    "ask_question 1 question (question_1)",
+  );
+  assert.equal(
+    header({
+      questions:
+        '[{"id": "cache_deletion", "options": ["Yes", "Skip for now"], "question": "Approve deleting rebuildable caches?"}, {"id": "m1_sudo", "options": ["I\'ll run it myself", "Skip it"], "question": "How do you want to handle the restart?"}]',
+    }),
+    "ask_question 2 questions (cache_deletion, m1_sudo)",
+  );
+});
+
 nodeTest(
   "ask_question renderCall shows count and ids, renderResult shows answers or cancelled",
   () => {
@@ -1826,18 +1850,17 @@ nodeTest("ask_question call card counts questions in arguments Pi has not valida
   const header = (args: unknown) =>
     tool.renderCall(args, harness.theme, harness.ctx).render(80).join("\n").trimEnd();
 
-  // Pi turns these strings into a one-option list and a boolean, then runs the call.
+  // While the model is still writing a list string, the string is not a list yet.
   assert.equal(
     header({
       multiSelect: "false",
-      options: '["Yes", "Only the two biggest", "Skip for now"]',
+      options: '["Yes", "Only the two big',
       question: "Delete the caches?",
     }),
     "ask_question 1 question (question_1)",
   );
-  // Pi rejects this call: the question list is one string.
   assert.equal(
-    header({ questions: '[{"id": "cache_deletion", "question": "Delete the caches?"}]' }),
+    header({ questions: '[{"id": "cache_deletion", "question": "Delete the ca' }),
     "ask_question 0 questions",
   );
 });

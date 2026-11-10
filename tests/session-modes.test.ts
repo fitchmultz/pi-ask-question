@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test as nodeTest } from "node:test";
@@ -10,51 +8,9 @@ import { fileURLToPath } from "node:url";
 import type * as PiSdkModule from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isRecord } from "../extensions/lib/validate.ts";
+import { startModelEndpoint } from "./model-endpoint.ts";
 
 const extension = fileURLToPath(new URL("../extensions/ask-question.ts", import.meta.url));
-
-/** Start an OpenAI-compatible endpoint that records each request body and answers "ok". */
-async function startModelEndpoint() {
-  const requests: string[] = [];
-  const chunk = (delta: object, finishReason: string | null) =>
-    `data: ${JSON.stringify({
-      id: "probe",
-      object: "chat.completion.chunk",
-      created: 0,
-      model: "probe",
-      choices: [{ index: 0, delta, finish_reason: finishReason }],
-    })}\n\n`;
-  const server = createServer((request, response) => {
-    let body = "";
-    request.setEncoding("utf8").on("data", (data: string) => {
-      body += data;
-    });
-    request.on("end", () => {
-      requests.push(body);
-      response.writeHead(200, { "content-type": "text/event-stream" });
-      response.write(chunk({ role: "assistant", content: "ok" }, null));
-      response.write(chunk({}, "stop"));
-      response.end("data: [DONE]\n\n");
-    });
-  });
-  await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  assert.ok(isAddressInfo(address));
-  return {
-    requests,
-    url: `http://127.0.0.1:${address.port}/v1`,
-    close: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      }),
-  };
-}
-
-function isAddressInfo(value: string | AddressInfo | null): value is AddressInfo {
-  return typeof value === "object" && value !== null;
-}
 
 /** Names of the tools one recorded request declares to the model. */
 function declaredTools(body: string): string[] {
