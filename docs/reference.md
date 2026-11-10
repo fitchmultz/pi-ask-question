@@ -62,6 +62,25 @@ For tool callers:
 - Do not include a custom-answer option; the UI adds one.
 - Use multi-select only when the user may need to choose more than one option.
 
+## Where the tool is offered
+
+Pi offers `ask_question` to the model only in a session that can show a question: one where `ctx.hasUI` is `true` at session start.
+
+| Session                                                          | `ask_question` |
+| ---------------------------------------------------------------- | -------------- |
+| Terminal UI                                                      | Offered        |
+| RPC client                                                       | Offered        |
+| Print mode (`-p`) and JSON mode                                  | Not offered    |
+| SDK session bound without a UI context, such as a subagent child | Not offered    |
+
+In a session without a UI, the extension registers the tool again with `exposure: "hidden"`. Requests then carry no `ask_question` declaration and no `ask_question` rule lines, and scripts and other tools cannot call it. `--tools`, `defaultTools`, and a resumed journal do not bring it back in that session. Sessions with a UI are unchanged.
+
+A journal that declared `ask_question` and is resumed without a UI records the tool as removed at its next request. Pi keeps a removed tool removed, so the tool stays off when that journal is opened with a UI again. Start that session with `--tools +ask_question` to offer it again.
+
+An SDK host that never binds extensions emits no session start, so the tool stays declared there. A call without a UI returns this error:
+
+> ask_question cannot show a question: this session has no Pi TUI or RPC client. Ask in your reply instead.
+
 ## Results
 
 Answers are returned in tool result text and structured `details`:
@@ -84,7 +103,7 @@ The configured selection-cancel binding cancels the question and reports cancell
 - While typing a custom answer, the list shows only that choice; Escape returns to the list. Shift+PageUp/Shift+PageDown can scroll a long question while editing.
 - Saved answers have a one-line preview while choosing; the review retains their full text.
 - Blank RPC custom answers return to option selection, matching TUI behavior; dismissing the input cancels.
-- Print and JSON modes return a tool error because they cannot collect user input.
+- Sessions without a UI cannot collect user input and do not offer the tool. See [Where the tool is offered](#where-the-tool-is-offered).
 
 ### Terminal controls
 
@@ -121,7 +140,7 @@ The timeout closes the TUI question and stops server-side waiting in RPC mode. R
 
 `/grill-me` toggles pressure-test mode. Explicit commands are `/grill-me on`, `/grill-me off`, and `/grill-me status`.
 
-When enabled, the footer shows subtle `grill-mode` text. The agent is told to walk the decision tree, inspect available repository evidence before asking, ask one blocking question at a time, and include its recommended answer first. It uses `ask_question` in TUI and RPC modes when the tool is active; without an active tool or in print and JSON modes, it asks in normal text instead.
+When enabled, the footer shows subtle `grill-mode` text. The agent is told to walk the decision tree, inspect available repository evidence before asking, ask one blocking question at a time, and include its recommended answer first. It uses `ask_question` in TUI and RPC modes when the tool is active; without an active tool or in a session without a UI, it asks in normal text instead.
 
 The setting is saved in the current session branch and survives `/reload`. The footer status is cleared when disabled.
 

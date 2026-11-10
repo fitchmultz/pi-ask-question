@@ -108,7 +108,9 @@ export function createAskQuestionTool(
         throw new Error("ask_question needs either question or questions[].");
       }
       if (!ctx.hasUI) {
-        throw new Error("ask_question needs Pi TUI or RPC UI support.");
+        throw new Error(
+          "ask_question cannot show a question: this session has no Pi TUI or RPC client. Ask in your reply instead.",
+        );
       }
 
       observer.identify(ctx);

@@ -381,7 +381,7 @@ nodeTest("ask_question refuses modes without UI", async () => {
       undefined,
       harness.ctx,
     ),
-    /needs Pi TUI or RPC UI support/,
+    /this session has no Pi TUI or RPC client\. Ask in your reply instead\./,
   );
 });
 
