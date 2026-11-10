@@ -30,6 +30,7 @@ npm run check:compat # all behavior tests + typecheck + pack dry-run
 - `tests/native-tui.test.ts` loads the extension through Pi's native SDK and runs `InteractiveMode` with an in-memory `Terminal`. It checks answer, Escape, and caller abort in default fullscreen and regular mode, short-terminal choices and editing, paging, resize, and widget overlap. It also checks draft and keyboard ownership restoration, cooperative answers and reload cleanup, and native grill-mode tree/fork/resume/reload restoration. It does not touch the process terminal or clipboard, use provider credentials, or make model calls.
 - `tests/ask-question.test.ts` covers timeout, custom answers, multi-select, grill-mode, and the cooperative event-bus protocol.
 - `tests/rpc-ui.test.ts` exercises actual bundled-CLI RPC selection, custom input, multi-select, cancellation, and reload recovery without provider calls.
+- `tests/session-modes.test.ts` runs the bundled CLI in print, JSON, and RPC modes against a local model endpoint and checks which requests offer `ask_question`, including after an RPC reload, new session, resume, and fork. It also resumes a journal in an SDK session bound without a UI, as a subagent child is, and checks that the journal's other tools still load. It sends a request from SDK sessions that get no session start event, one never bound and one reloaded after an empty bind, and checks that the request does not offer the tool.
 
 Both default fullscreen and regular mode use the host renderer; no additional fork TUI APIs are required.
 

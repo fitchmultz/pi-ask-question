@@ -39,7 +39,7 @@ In RPC mode, Pi learns about interaction when the client submits a dialog choice
 
 The tool keeps saved answers. It does not submit unsaved custom answer text or select an answer for you.
 
-Question dialogs require the terminal UI or an RPC client that supports Pi dialogs. Print and JSON modes return a tool error.
+Question dialogs require the terminal UI or an RPC client that supports Pi dialogs. Pi does not offer `ask_question` to the agent in print mode, JSON mode, or SDK sessions without a UI, such as subagent children. See [where the tool is offered](docs/reference.md#where-the-tool-is-offered).
 
 ## Check requirements with `/grill-me`
 
@@ -55,7 +55,7 @@ Use `/grill-me` to toggle the mode. Use `/grill-me off` to disable the mode. Use
 
 The terminal footer shows `grill-mode` when enabled. Pi saves the setting in your current session branch. The setting survives `/reload`.
 
-In print and JSON modes, the agent asks questions in normal text.
+In sessions without a UI, such as print and JSON modes, the agent asks questions in normal text.
 
 ## Reference
 

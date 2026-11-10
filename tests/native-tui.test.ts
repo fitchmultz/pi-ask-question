@@ -1315,7 +1315,7 @@ nodeTest(
       );
 
       await t.test(
-        "grill-me follows tree, fork, resume and reload on the native runtime",
+        "grill-me and the tool follow tree, fork, resume and reload on the native runtime",
         async () => {
           await runtime.session.prompt("/grill-me on");
           const enabledEntry = runtime.session.sessionManager.getLeafId();
@@ -1331,6 +1331,10 @@ nodeTest(
               selectedTools: ["ask_question"],
             });
             assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
+            assert.ok(
+              runtime.session.getActiveToolNames().includes("ask_question"),
+              "The TUI session still offers ask_question",
+            );
           };
           await assertEnabled();
 
