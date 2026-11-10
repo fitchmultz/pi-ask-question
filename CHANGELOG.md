@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.14 - 2026-11-10
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Read ask_question lists that arrive as one JSON string (#76) ([54c295d](https://github.com/fitchmultz/pi-ask-question/commit/54c295dd2949371e05a34daaa970b0c253b24a38))
+
+### What's Changed
+
+- Read ask_question lists that arrive as one JSON string by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/76
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.13...v0.6.14
+
 ## 0.6.13 - 2026-11-10
 
 <!-- npm-release:unreleased:start -->
