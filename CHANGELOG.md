@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.12 - 2026-11-10
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Stop offering ask_question in sessions that cannot show a question (#72) ([eded7aa](https://github.com/fitchmultz/pi-ask-question/commit/eded7aabbf620a3cd0847ece70becb893bc11003))
+
+### What's Changed
+
+- Stop offering ask_question in sessions that cannot show a question by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/72
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.11...v0.6.12
+
 ## 0.6.11 - 2026-11-08
 
 <!-- npm-release:unreleased:start -->
