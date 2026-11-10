@@ -47,7 +47,7 @@ Phased enforcement under standard Section 9.2. Each phase lands only when its de
 | Source lint compliance (`extensions/`)                      | Done   |
 | Test lint compliance and repository-wide lint enforcement   | Done   |
 
-Repository-wide adoption is complete per standard Section 10.2. Quality exceptions in force: QX-001 through QX-006 in [quality-exceptions.md](quality-exceptions.md).
+Repository-wide adoption is complete per standard Section 10.2. Quality exceptions in force: QX-001 through QX-007 in [quality-exceptions.md](quality-exceptions.md).
 
 ## Verification
 

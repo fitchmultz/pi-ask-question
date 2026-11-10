@@ -56,6 +56,8 @@ Ask several questions:
 
 A nonempty `questions` array takes precedence over the single-question fields. IDs default to `question_<n>`; duplicate IDs are auto-suffixed. `multiSelect` defaults to `false`.
 
+Some models send a list as one JSON string, such as `"options": "[\"Minimal\", \"Complete\"]"`. The tool reads such a string as the list it holds: a JSON list of texts in `options`, or a JSON list of question objects in `questions`. Any other string is handled as before: text in `options` is a single option, and text in `questions` is rejected.
+
 For tool callers:
 
 - Order options from most recommended to least recommended.

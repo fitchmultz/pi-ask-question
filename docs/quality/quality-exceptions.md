@@ -97,3 +97,19 @@ Verification commands, relevant tests, and results: npm run typecheck (0 errors)
 Retained protection, lost detection, and established assumptions: only this cast is exempt; the rest of the integration harness (typed MemoryTerminal, bus guards, ctx accessors) remains fully checked. Assumption: private renderer/switchTuiMode keep their current shapes — test failures flag drift.
 Review and revisit trigger: if Pi publishes a public viewport or mode-switching API, replace the seam with it and drop this exception.
 ```
+
+## QX-007: Return cast of the `prepareArguments` hook
+
+```text
+ID and title: QX-007 — return cast of the prepareArguments hook
+Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Scope: extensions/lib/schema.ts, the single return of prepareAskQuestionArguments
+Directive selectors/inventory and optional duplication bounds: one next-line directive on that return statement; no other site
+Diagnostic and required contract: prepareAskQuestionArguments returns the model's raw arguments, with JSON list strings read as lists, as Static<typeof AskQuestionParams>. The Pi SDK types the hook as prepareArguments?: (args: unknown) => Static<TParams> (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts:490), but it runs before validation: "If defined, it runs before schema validation and before execute() ... Return the object you want validated against parameters" (docs/extensions.md:2302). Pi validates the returned value itself (pi-agent-core dist/agent-loop.js:478 then :498). The value is unvalidated by design, so no type guard can prove the declared return type.
+Actual compliant alternative and demonstrated quality cost: validating inside the hook to earn the type would duplicate Pi's conversion and validation, and would have to reject or rewrite arguments that Pi converts today (multiSelect "false", a plain text option), changing tool behavior. Parsing inside execute instead runs after Pi has already wrapped the string into a one-item list. Pi's own documentation example and its edit tool use the same cast (docs/extensions.md:2226-2233; dist/core/tools/edit.js:41-70).
+Chosen adjustment and why its scope is appropriate: one next-line directive on the one return, identified QX-007. All list reading before it works on unknown values with real checks (isRecord, typeof, Array.isArray).
+Structural comparison or unsafe-type evidence, where applicable: the cast value reaches only two consumers. Pi validates it before execute. The call renderer passes it to normalize, which receives raw model arguments from Pi's renderCall contract with or without this hook.
+Verification commands, relevant tests, and results: npm run typecheck (0 errors); npm test (90/90 pass, including the bundled-CLI cases in tests/rpc-ui.test.ts where a model sends list strings through Pi's preparation and validation); npx oxlint --deny-warnings . (0 findings).
+Retained protection, lost detection, and established assumptions: only this return is exempt; any other unknown-to-narrower assertion still fails lint. Assumption: Pi keeps validating the hook's return value. The bundled-CLI tests fail if it stops.
+Review and revisit trigger: if the Pi SDK types the hook's return as unvalidated input, drop the cast and this exception.
+```
