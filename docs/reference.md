@@ -64,20 +64,20 @@ For tool callers:
 
 ## Where the tool is offered
 
-Pi offers `ask_question` to the model only in a session that can show a question: one where `ctx.hasUI` is `true` at session start.
+Pi offers `ask_question` to the model only in a session that can show a question: one where `ctx.hasUI` is `true`. The extension checks when the session starts and again before each agent run.
 
-| Session                                                          | `ask_question` |
-| ---------------------------------------------------------------- | -------------- |
-| Terminal UI                                                      | Offered        |
-| RPC client                                                       | Offered        |
-| Print mode (`-p`) and JSON mode                                  | Not offered    |
-| SDK session bound without a UI context, such as a subagent child | Not offered    |
+| Session                                                    | `ask_question` |
+| ---------------------------------------------------------- | -------------- |
+| Terminal UI                                                | Offered        |
+| RPC client                                                 | Offered        |
+| Print mode (`-p`) and JSON mode                            | Not offered    |
+| SDK session without a UI context, such as a subagent child | Not offered    |
 
 In a session without a UI, the extension registers the tool again with `exposure: "hidden"`. Requests then carry no `ask_question` declaration and no `ask_question` rule lines, and scripts and other tools cannot call it. `--tools`, `defaultTools`, and a resumed journal do not bring it back in that session. Sessions with a UI are unchanged.
 
 A journal that declared `ask_question` and is resumed without a UI records the tool as removed at its next request. Pi keeps a removed tool removed, so the tool stays off when that journal is opened with a UI again. Start that session with `--tools +ask_question` to offer it again.
 
-An SDK host that never binds extensions emits no session start, so the tool stays declared there. A call without a UI returns this error:
+The check before each agent run covers the sessions that Pi starts without a session start event: an SDK session that never binds extensions, and a reloaded SDK session that bound no UI context, command actions, shutdown handler, or error listener. The tool also checks at call time. A call that reaches it without a UI returns this error:
 
 > ask_question cannot show a question: this session has no Pi TUI or RPC client. Ask in your reply instead.
 

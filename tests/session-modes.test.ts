@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test as nodeTest } from "node:test";
 import { fileURLToPath } from "node:url";
+import type * as PiSdkModule from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { isRecord } from "../extensions/lib/validate.ts";
 
@@ -292,6 +293,67 @@ async function withIsolatedProfile(
   }
 }
 
+type PiSdk = typeof PiSdkModule;
+type ExtensionFactory = NonNullable<
+  NonNullable<
+    Parameters<PiSdk["createAgentSessionServices"]>[0]["resourceLoaderOptions"]
+  >["extensionFactories"]
+>[number];
+
+/** Open an SDK session that loads only the extension under test and the given factories. */
+async function openSdkSession(
+  pi: PiSdk,
+  options: {
+    home: string;
+    agentDir: string;
+    sessionManager: ReturnType<PiSdk["SessionManager"]["inMemory"]>;
+    extensionFactories: ExtensionFactory[];
+    /** Provider and model id of a model that `extensionFactories` registers. */
+    model?: string;
+  },
+) {
+  const { home, agentDir, sessionManager, extensionFactories, model } = options;
+  const settingsManager = pi.SettingsManager.inMemory({ quietStartup: true });
+  const modelRuntime = await pi.ModelRuntime.create({
+    authPath: join(agentDir, "auth.json"),
+    modelsPath: null,
+    allowModelNetwork: false,
+  });
+  return pi.createAgentSessionRuntime(
+    async ({ cwd, sessionManager: manager }) => {
+      const services = await pi.createAgentSessionServices({
+        cwd,
+        agentDir,
+        modelRuntime,
+        settingsManager,
+        resourceLoaderOptions: {
+          noExtensions: true,
+          noSkills: true,
+          noPromptTemplates: true,
+          noThemes: true,
+          noContextFiles: true,
+          additionalExtensionPaths: [extension],
+          extensionFactories,
+        },
+      });
+      assert.deepEqual(services.resourceLoader.getExtensions().errors, []);
+      const selected =
+        model === undefined ? undefined : services.modelRuntime.getModel(model, model);
+      assert.equal(selected === undefined, model === undefined, "The test model is registered");
+      return {
+        ...(await pi.createAgentSessionFromServices({
+          services,
+          sessionManager: manager,
+          ...(selected === undefined ? {} : { model: selected }),
+        })),
+        services,
+        diagnostics: services.diagnostics,
+      };
+    },
+    { cwd: home, agentDir, sessionManager },
+  );
+}
+
 // pi-subagents binds its children exactly like this: print mode, no UI context, an error listener.
 nodeTest(
   "a session resumed without a UI withdraws ask_question and keeps the journal's other tools",
@@ -302,12 +364,6 @@ nodeTest(
     });
     await withIsolatedProfile(async (home, agentDir) => {
       const pi = await import("@earendil-works/pi-coding-agent");
-      const settingsManager = pi.SettingsManager.inMemory({ quietStartup: true });
-      const modelRuntime = await pi.ModelRuntime.create({
-        authPath: join(agentDir, "auth.json"),
-        modelsPath: null,
-        allowModelNetwork: false,
-      });
       // The journal of a UI session: it declared ask_question, and a tool that registers after
       // session start, as the tools of a connecting MCP server do.
       const sessionManager = pi.SessionManager.inMemory(home);
@@ -322,47 +378,27 @@ nodeTest(
         timestamp: Date.now(),
       });
       const errors: string[] = [];
-      const runtime = await pi.createAgentSessionRuntime(
-        async ({ cwd, sessionManager: manager }) => {
-          const services = await pi.createAgentSessionServices({
-            cwd,
-            agentDir,
-            modelRuntime,
-            settingsManager,
-            resourceLoaderOptions: {
-              noExtensions: true,
-              noSkills: true,
-              noPromptTemplates: true,
-              noThemes: true,
-              noContextFiles: true,
-              additionalExtensionPaths: [extension],
-              extensionFactories: [
-                (api) => {
-                  api.registerCommand("connect", {
-                    handler: async () => {
-                      api.registerTool({
-                        name: "late_tool",
-                        label: "Late tool",
-                        description: "Registers after session start",
-                        exposure: "deferred",
-                        parameters: Type.Object({}),
-                        execute: async () => ({ content: [], details: {} }),
-                      });
-                    },
-                  });
-                },
-              ],
-            },
-          });
-          assert.deepEqual(services.resourceLoader.getExtensions().errors, []);
-          return {
-            ...(await pi.createAgentSessionFromServices({ services, sessionManager: manager })),
-            services,
-            diagnostics: services.diagnostics,
-          };
-        },
-        { cwd: home, agentDir, sessionManager },
-      );
+      const runtime = await openSdkSession(pi, {
+        home,
+        agentDir,
+        sessionManager,
+        extensionFactories: [
+          (api) => {
+            api.registerCommand("connect", {
+              handler: async () => {
+                api.registerTool({
+                  name: "late_tool",
+                  label: "Late tool",
+                  description: "Registers after session start",
+                  exposure: "deferred",
+                  parameters: Type.Object({}),
+                  execute: async () => ({ content: [], details: {} }),
+                });
+              },
+            });
+          },
+        ],
+      });
       try {
         await runtime.session.bindExtensions({
           mode: "print",
@@ -391,5 +427,72 @@ nodeTest(
         await runtime.dispose();
       }
     });
+  },
+);
+
+// Pi announces a session start on bind, and on reload only when the host bound a UI context,
+// command actions, a shutdown handler or an error listener. These SDK sessions get neither.
+nodeTest(
+  "an SDK session without a UI does not offer ask_question when Pi announces no session start",
+  { timeout: 20_000 },
+  async (t) => {
+    const endpoint = await startModelEndpoint();
+    t.after(endpoint.close);
+    const cases = [
+      { name: "never bound", bind: false, reload: false },
+      { name: "bound with nothing, then reloaded", bind: true, reload: true },
+    ];
+    for (const { name, bind, reload } of cases) {
+      await t.test(name, async () => {
+        await withIsolatedProfile(async (home, agentDir) => {
+          const pi = await import("@earendil-works/pi-coding-agent");
+          const runtime = await openSdkSession(pi, {
+            home,
+            agentDir,
+            sessionManager: pi.SessionManager.inMemory(home),
+            model: "probe",
+            extensionFactories: [
+              (api) => {
+                api.registerProvider("probe", {
+                  baseUrl: endpoint.url,
+                  apiKey: "probe-key",
+                  api: "openai-completions",
+                  models: [
+                    {
+                      id: "probe",
+                      name: "probe",
+                      reasoning: false,
+                      input: ["text"],
+                      contextWindow: 100_000,
+                      maxTokens: 1000,
+                      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                    },
+                  ],
+                });
+              },
+            ],
+          });
+          try {
+            if (bind) {
+              await runtime.session.bindExtensions({});
+            }
+            if (reload) {
+              await runtime.session.reload();
+            }
+            const sent = endpoint.requests.length;
+            await runtime.session.prompt("hi");
+            assert.equal(endpoint.requests.length, sent + 1, "One model request");
+            const body = endpoint.requests.at(-1) ?? "";
+            assert.ok(declaredTools(body).includes("read"), "Other tools stay declared");
+            assert.ok(
+              !body.includes("ask_question"),
+              "No declaration, tool list entry, or rule line names ask_question",
+            );
+          } finally {
+            await runtime.dispose();
+          }
+        });
+      });
+    }
   },
 );
