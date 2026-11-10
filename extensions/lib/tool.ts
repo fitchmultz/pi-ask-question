@@ -48,8 +48,17 @@ function createQuestionTimeout(): {
   return { timeout, signal: controller.signal, dispose: () => clearTimeout(timer) };
 }
 
+/**
+ * Pi draws the call from the model's arguments before it validates them, so a list field can hold
+ * another type. The header shows the questions that have text and their ids, and reads no options.
+ */
 function renderAskCall(args: Static<typeof AskQuestionParams>, theme: Theme): Component {
-  const questions = normalize(args);
+  const { options: _options, questions: list, ...single } = args;
+  const questions = normalize(
+    Array.isArray(list)
+      ? { ...single, questions: list.map(({ options: _nested, ...shown }) => shown) }
+      : single,
+  );
   const count = questions.length;
   const labels = questions.map((question) => question.id).join(", ");
   let text = theme.fg("toolTitle", theme.bold("ask_question "));
@@ -58,6 +67,17 @@ function renderAskCall(args: Static<typeof AskQuestionParams>, theme: Theme): Co
     text += theme.fg("dim", ` (${labels})`);
   }
   return new Text(text, 0, 0);
+}
+
+/**
+ * Pi builds the result of a call that failed or never ran: the error text it gave the model, with
+ * no question details.
+ */
+function renderAskError(result: AgentToolResult<unknown>, theme: Theme): Component {
+  const text = result.content
+    .flatMap((block) => (block.type === "text" ? [block.text] : []))
+    .join("\n");
+  return new Text(theme.fg("error", text), 0, 0);
 }
 
 function renderAskResult(result: AgentToolResult<AskQuestionDetails>, theme: Theme): Component {
@@ -147,6 +167,7 @@ export function createAskQuestionTool(
     },
 
     renderCall: (args, theme, _context) => renderAskCall(args, theme),
-    renderResult: (result, _options, theme, _context) => renderAskResult(result, theme),
+    renderResult: (result, _options, theme, context) =>
+      context.isError ? renderAskError(result, theme) : renderAskResult(result, theme),
   });
 }
