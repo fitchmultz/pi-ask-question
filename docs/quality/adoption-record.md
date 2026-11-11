@@ -26,7 +26,7 @@
 | Tests     | node:test                                                      | `npm test`                                  |
 | Aggregate |                                                                | `npm run check`                             |
 
-Hosted CI runs a `quality` job (format, lint, tests, typecheck) and the `compatibility` job (host qualification) on every pull request and main push in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml). Phased enforcement is complete: CI lints the whole repository via `npm run lint`, and `npm run check` aggregates lint before tests, typecheck, formatting, and packaging.
+Hosted CI runs a `quality` job (format, lint, tests, typecheck) and the `compatibility` job (host qualification) on every pull request in [`pi-compatibility.yml`](../../.github/workflows/pi-compatibility.yml). Phased enforcement is complete: CI lints the whole repository via `npm run lint`, and `npm run check` aggregates lint before tests, typecheck, formatting, and packaging.
 
 ## Source profiles and formatter ownership
 
