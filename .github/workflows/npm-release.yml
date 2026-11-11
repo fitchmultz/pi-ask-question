@@ -19,9 +19,9 @@ jobs:
     permissions:
       contents: write
     if: vars.NPM_RELEASE_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.repository_owner == 'fitchmultz'
-    uses: fitchmultz/.github/.github/workflows/npm-release-plan.yml@f407404914bf6d048e4d952c62711df5103cc7ef # main
+    uses: fitchmultz/.github/.github/workflows/npm-release-plan.yml@508d2e23c75cab8fdd28bc62fc7fed2a9a0d1cca # main
     with:
-      automation-ref: f407404914bf6d048e4d952c62711df5103cc7ef # main
+      automation-ref: 508d2e23c75cab8fdd28bc62fc7fed2a9a0d1cca # main
 
   checks:
     needs: plan
@@ -37,11 +37,11 @@ jobs:
     permissions:
       contents: write
       id-token: write
-    uses: fitchmultz/.github/.github/workflows/npm-release.yml@f407404914bf6d048e4d952c62711df5103cc7ef # main
+    uses: fitchmultz/.github/.github/workflows/npm-release.yml@508d2e23c75cab8fdd28bc62fc7fed2a9a0d1cca # main
     secrets:
       NPM_BOOTSTRAP_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
     with:
-      automation-ref: f407404914bf6d048e4d952c62711df5103cc7ef # main
+      automation-ref: 508d2e23c75cab8fdd28bc62fc7fed2a9a0d1cca # main
       source-ref: ${{ needs.plan.outputs.source }}
       release-source: ${{ needs.plan.outputs.release-source }}
       official-version: ${{ needs.plan.outputs.official-version }}
