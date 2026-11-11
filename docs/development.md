@@ -42,7 +42,7 @@ Shared automation selects each host's actual SDK and companion dependency graph;
 
 ## Publishing
 
-When `NPM_RELEASE_ENABLED` is `true`, each main merge enters the automatic version queue. Its version PR must pass current-head compatibility and reviews before the main-only [`npm-release.yml`](../.github/workflows/npm-release.yml) pipeline publishes matching npm and GitHub releases. Release planning and publishing use the same frozen host inputs.
+When `NPM_RELEASE_ENABLED` is `true`, each main merge enters the automatic version queue. A version PR opens when the merge changes the package users install; a merge that changes only CI, tests or development tooling ships with the next release. The version PR must pass current-head compatibility and reviews before the main-only [`npm-release.yml`](../.github/workflows/npm-release.yml) pipeline publishes matching npm and GitHub releases. Release planning and publishing use the same frozen host inputs.
 
 The package file allowlist excludes `docs/` and `.github/readme/`; the diagram source and PNG stay in the repository.
 
