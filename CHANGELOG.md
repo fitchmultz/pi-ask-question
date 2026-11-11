@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.15 - 2026-11-11
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Wake the version workflow only for release events and drop the duplicate main CI run (#78) ([b215d5c](https://github.com/fitchmultz/pi-ask-question/commit/b215d5c2148b7bdc7036cba268782c3a8fa23afb))
+
+### What's Changed
+
+- Wake the version workflow only for release events and drop the duplicate main CI run by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/78
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.14...v0.6.15
+
 ## 0.6.14 - 2026-11-10
 
 <!-- npm-release:unreleased:start -->
