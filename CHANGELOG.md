@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.6.16 - 2026-11-12
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- ci: align shared automation pins and wire release supersession inputs (#80) ([6a17485](https://github.com/fitchmultz/pi-ask-question/commit/6a1748512ae6393c5a4da85437523180af7fda78))
+
+### What's Changed
+
+- ci: align shared automation pins and wire release supersession inputs by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/80
+- chore: require patched Node.js security releases by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/81
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.15...v0.6.16
+
 ## 0.6.15 - 2026-11-11
 
 <!-- npm-release:unreleased:start -->
