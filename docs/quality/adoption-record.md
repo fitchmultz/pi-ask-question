@@ -4,7 +4,7 @@
 
 - Repository: `fitchmultz/pi-ask-question`
 - Adopted standard: [Strict Oxlint and Oxfmt Engineering Standard](../strict-oxlint-oxfmt-standard.md), version 5.1.2 (1 November 2026)
-- Supported runtimes: Node.js 24 or newer (`.nvmrc` pins 24.21.0); npm 12 (`packageManager: npm@12.2.0`)
+- Supported runtimes: Node.js 24.22.3 (24.x) or 26.13.1 and later (`.nvmrc` pins 24.22.3); npm 12 (`packageManager: npm@12.2.0`)
 - Starting revision: `78651db` on `main`, clean working tree; the unrelated `docs/dependency-maintenance-20261017` branch and its worktrees are separate in-flight work and are not part of this migration
 
 ## Installed toolchain
