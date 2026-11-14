@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { once } from "node:events";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -35,9 +36,9 @@ async function exited(child: ChildProcessWithoutNullStreams): Promise<number | n
   if (child.exitCode !== null || child.signalCode !== null) {
     return child.exitCode;
   }
-  return new Promise((resolve) => {
-    child.once("exit", (code) => resolve(code));
-  });
+  const result: readonly unknown[] = await once(child, "exit");
+  const [code] = result;
+  return typeof code === "number" ? code : null;
 }
 
 // Each CLI run sends a real request to a local model endpoint. The request body is what the
