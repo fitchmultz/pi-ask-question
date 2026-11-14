@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.17 - 2026-11-14
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Raise the Pi floor to 1.5.2 and use Node 24/ES2025 built-ins (#83) ([b78e2f9](https://github.com/fitchmultz/pi-ask-question/commit/b78e2f9cb4c6c200b2a4e0b58769268c7f9ab40b))
+
+### What's Changed
+
+- Raise the Pi floor to 1.5.2 and use Node 24/ES2025 built-ins by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/83
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.16...v0.6.17
+
 ## 0.6.16 - 2026-11-12
 
 <!-- npm-release:unreleased:start -->
