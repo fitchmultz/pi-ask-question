@@ -1,6 +1,6 @@
 /** Runtime-local observer for the cooperative answer-bus protocol. */
 
-import { createHash, randomUUID } from "node:crypto";
+import { hash, randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { isRecord, validId } from "./validate.ts";
 
@@ -114,20 +114,20 @@ class RuntimeObserver implements QuestionObserver {
   }
 
   accept(target: Target, requestId: string, answer: string | string[]): void {
-    const fingerprint = createHash("sha256")
-      .update(
-        JSON.stringify([
-          this.protocolVersion,
-          this.ownerGeneration,
-          this.nativeRoot,
-          target.promptId,
-          target.questionId,
-          target.revision,
-          target.deadline,
-          answer,
-        ]),
-      )
-      .digest("hex");
+    const fingerprint = hash(
+      "sha256",
+      JSON.stringify([
+        this.protocolVersion,
+        this.ownerGeneration,
+        this.nativeRoot,
+        target.promptId,
+        target.questionId,
+        target.revision,
+        target.deadline,
+        answer,
+      ]),
+      "hex",
+    );
     this.accepted.set(JSON.stringify([target.promptId, requestId]), {
       ...target,
       requestId,

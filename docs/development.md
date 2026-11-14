@@ -4,7 +4,7 @@
 
 ## Run locally
 
-Requires Node.js 24.22.3 (24.x) or 26.13.1 and later and Pi 1.5.0+. Have `fd` and `rg` on PATH for native TUI initialization without downloads.
+Requires Node.js 24.22.3 (24.x) or 26.13.1 and later and Pi 1.5.2+. Have `fd` and `rg` on PATH for native TUI initialization without downloads.
 
 ```bash
 npm install --ignore-scripts
