@@ -82,12 +82,24 @@ nodeTest(
         assert.ok(codes.has(expected), `missing ${expected} in ${JSON.stringify([...codes])}`);
       }
 
+      writeFileSync(probePath, "export const ok = 1;\n");
+      const clean = spawnSync(oxlintBin, ["--deny-warnings", "extensions/toolchain-probe.ts"], {
+        cwd: root,
+        encoding: "utf8",
+      });
+      assert.equal(
+        clean.status,
+        0,
+        `clean probe must pass under tsrs: ${clean.stdout}${clean.stderr}`,
+      );
+
       const missing = spawnSync(oxlintBin, ["--deny-warnings", "extensions/toolchain-probe.ts"], {
         cwd: root,
         env: { ...process.env, OXLINT_TSGOLINT_PATH: join(root, "missing-tsrs-lint") },
         encoding: "utf8",
       });
       assert.notEqual(missing.status, 0, "missing type-aware backend must fail closed");
+      assert.match(`${missing.stdout}${missing.stderr}`, /Failed to find tsgolint executable/i);
 
       writeFileSync(
         probePath,
