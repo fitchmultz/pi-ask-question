@@ -1806,6 +1806,96 @@ nodeTest(
     const out = answered.render(80).join("\n");
     assert.match(out, /q/);
     assert.match(out, /Yes/);
+
+    const fallbackLines = tool
+      .renderResult(
+        {
+          content: [{ type: "text", text: "Partial\u001b[31m output\u009bhere\nSecond line" }],
+          details: {},
+        },
+        { expanded: false, isPartial: false },
+        harness.theme,
+        { isError: false },
+      )
+      .render(80);
+    assert.ok(fallbackLines.every((line) => !/[\u0000-\u001f\u007f-\u009f]/.test(line)));
+    assert.equal(
+      fallbackLines.map((line) => line.trimEnd()).join("\n"),
+      "Partial [31m output here\nSecond line",
+    );
+
+    const emptyFallback = tool.renderResult(
+      { content: [], details: {} },
+      { expanded: false, isPartial: false },
+      harness.theme,
+      { isError: false },
+    );
+    assert.deepEqual(emptyFallback.render(80), []);
+
+    const controlCall = tool
+      .renderCall(
+        { questions: [{ id: "scope\u001b[31m\u0007\n\u009bnext", question: "Scope?" }] },
+        harness.theme,
+        harness.ctx,
+      )
+      .render(80);
+    assert.ok(controlCall.every((line) => !/[\u0000-\u001f\u007f-\u009f]/.test(line)));
+    assert.match(controlCall.join("\n"), /scope \[31m next/);
+
+    const controlAnswered = tool
+      .renderResult(
+        {
+          content: [{ type: "text", text: "x" }],
+          details: {
+            questions: [
+              { id: "q\u001b[31m\u009b1", question: "Q1?", options: [], multiSelect: false },
+              { id: "q2", question: "Q2?", options: ["A", "B"], multiSelect: true },
+            ],
+            answers: [
+              {
+                id: "q\u001b[31m\u009b1",
+                question: "Q1?",
+                answer: "line1\n\u0007line2\u001b[2J\u009dend",
+                wasCustom: true,
+              },
+              {
+                id: "q2",
+                question: "Q2?",
+                answer: "A, B",
+                selectedOptions: ["A\u009b31m", "B\u007fC"],
+                wasCustom: false,
+              },
+            ],
+            cancelled: false,
+            timedOut: false,
+          },
+        },
+        { expanded: false, isPartial: false },
+        harness.theme,
+        harness.ctx,
+      )
+      .render(120);
+    assert.ok(controlAnswered.every((line) => !/[\u0000-\u001f\u007f-\u009f]/.test(line)));
+    const controlOut = controlAnswered.map((line) => line.trimEnd()).join("\n");
+    assert.match(controlOut, /q \[31m 1: line1 line2 \[2J end/);
+    assert.match(controlOut, /q2: \["A 31m","B C"\]/);
+
+    const controlTimedOut = tool
+      .renderResult(
+        {
+          content: [{ type: "text", text: "Timed out.\n- q\u001b[31m: val\u009bmore" }],
+          details: { questions: [], answers: [], cancelled: false, timedOut: true },
+        },
+        { expanded: false, isPartial: false },
+        harness.theme,
+        harness.ctx,
+      )
+      .render(80);
+    assert.ok(controlTimedOut.every((line) => !/[\u0000-\u001f\u007f-\u009f]/.test(line)));
+    assert.equal(
+      controlTimedOut.map((line) => line.trimEnd()).join("\n"),
+      "Timed out.\n- q [31m: val more",
+    );
   },
 );
 
