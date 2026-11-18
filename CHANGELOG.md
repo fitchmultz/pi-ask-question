@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.6.18 - 2026-11-18
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- ci: release through direct signed version commits (PEA-211) (#85) ([543ead0](https://github.com/fitchmultz/pi-ask-question/commit/543ead0f4cb7484a0f080b0bb2bed66bc6d717ba))
+
+### What's Changed
+
+- ci: release through direct signed version commits (PEA-211) (1/1) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/85
+- ci: migrate compatibility and release workflows to shared .github (1/2) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/86
+- fix: guard ask_question card details and sanitize control characters (2/2) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/87
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.17...v0.6.18
+
 ## 0.6.17 - 2026-11-14
 
 <!-- npm-release:unreleased:start -->
