@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.6.19 - 2026-11-18
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- chore(lint): switch from oxlint-tsgolint to tsrs (#89) ([199ff45](https://github.com/fitchmultz/pi-ask-question/commit/199ff45375a7b00c61b6845845e9efeebbc6834c))
+
+### What's Changed
+
+- chore(lint): switch from oxlint-tsgolint to tsrs by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/89
+- fix: accept readonly render output from Pi TUI hosts (PIF-212) (1/1) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/90
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.18...v0.6.19
+
 ## 0.6.18 - 2026-11-18
 
 <!-- npm-release:unreleased:start -->
