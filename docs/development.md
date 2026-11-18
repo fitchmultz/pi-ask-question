@@ -15,7 +15,7 @@ The publishable implementation is [`extensions/ask-question.ts`](../extensions/a
 
 ## Quality toolchain
 
-[The Strict Oxlint and Oxfmt Engineering Standard](strict-oxlint-oxfmt-standard.md) governs lint, format, typechecking, and verification; [docs/quality/](quality/) holds the adoption and exception records. `npm run lint` runs Oxlint with type-aware rules (via `oxlint-tsgolint`), `npm run format`/`format:check` run Oxfmt, and `npm run lint:fix` applies safe lint fixes.
+[The Strict Oxlint and Oxfmt Engineering Standard](strict-oxlint-oxfmt-standard.md) governs lint, format, typechecking, and verification; [docs/quality/](quality/) holds the adoption and exception records. `npm run lint` runs Oxlint with type-aware rules (via `tsrs`), `npm run format`/`format:check` run Oxfmt, and `npm run lint:fix` applies safe lint fixes.
 
 ## Check a change
 

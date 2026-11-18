@@ -6,7 +6,7 @@ Quality exceptions under [the Strict Oxlint and Oxfmt Engineering Standard](../s
 
 ```text
 ID and title: QX-001 — five-parameter execute callback for ask_question
-Rule, option, or threshold; installed tool versions: eslint/max-params (max 4); oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: eslint/max-params (max 4); oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: extensions/lib/tool.ts, the single defineTool execute callback
 Directive selectors/inventory and optional duplication bounds: one next-line directive on the execute callback; no other site
 Diagnostic and required contract: execute declares five parameters (_toolCallId, params, signal, _onUpdate, ctx). The Pi SDK fixes this positional contract: "Execute the tool." execute(toolCallId: string, params: Static<TParams>, signal: AbortSignal | undefined, onUpdate: AgentToolUpdateCallback<TDetails> | undefined, ctx: ExtensionToolContext) in @earendil-works/pi-coding-agent dist/core/extensions/types.d.ts. defineTool's callback type is not repo-owned and cannot be reshaped.
@@ -22,7 +22,7 @@ Review and revisit trigger: if the Pi SDK changes the execute callback shape, or
 
 ```text
 ID and title: QX-002 — handler mutation of systemPromptOptions.sections in /grill-me
-Rule, option, or threshold; installed tool versions: eslint/no-param-reassign (props); oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: eslint/no-param-reassign (props); oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: extensions/lib/grill-me.ts, the before_agent_start handler's grill_me section assignment; tests/native-tui.test.ts, the test extension's two before_agent_start assignments (cwd and sections.policy) that verify the same contract
 Directive selectors/inventory and optional duplication bounds: one next-line directive on the sections assignment in grill-me.ts; one next-line directive on each of the two assignments in the native-tui test extension; no other sites
 Diagnostic and required contract: event.systemPromptOptions.sections.grill_me = guidance assigns to a property of the event parameter. The Pi SDK documents this as the supported contract: "Mutable prompt sections. Later handlers observe mutations made by earlier handlers." (BeforeAgentStartEventBase.systemPromptOptions, @earendil-works/pi-coding-agent dist/core/extensions/types.d.ts). Section injection is the intended mechanism for augmenting the composed system prompt.
@@ -38,7 +38,7 @@ Review and revisit trigger: if Pi withdraws or changes the mutable-sections cont
 
 ```text
 ID and title: QX-003 — fake-Pi boundary cast in the ask-question unit harness
-Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: tests/ask-question.test.ts, the single askQuestion(pi as unknown as ExtensionAPI) call that boots the real extension against the fake host
 Directive selectors/inventory and optional duplication bounds: one next-line directive at the cast; no other site
 Diagnostic and required contract: the local FakePi object implements the ExtensionAPI members askQuestion consumes (events, registerTool, registerCommand, on) with test-local return types. no-unsafe-type-assertion flags the unknown-to-narrower cast at the harness boundary.
@@ -54,7 +54,7 @@ Review and revisit trigger: if askQuestion starts consuming additional Extension
 
 ```text
 ID and title: QX-004 — deliberately invalid bus payloads in the remote harness
-Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: tests/ask-question.test.ts, the remote-harness start() call that feeds fuzzed remote-answer payloads to the real tool
 Directive selectors/inventory and optional duplication bounds: one next-line directive on the params cast inside start(); no other site
 Diagnostic and required contract: start(params: unknown, signal?) forwards arbitrary bus payloads as Static<typeof AskQuestionParams> to tool.execute. The payloads are deliberately malformed strings, arrays, and objects whose rejection is the behavior under test; execute's declared parameter type expects validated params.
@@ -70,7 +70,7 @@ Review and revisit trigger: if the tool ever trusts params before normalize, or 
 
 ```text
 ID and title: QX-005 — node:test top-level registration allowance
-Rule, option, or threshold; installed tool versions: typescript/no-floating-promises (allowForKnownSafeCalls, package specifier node:test / nodeTest); oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: typescript/no-floating-promises (allowForKnownSafeCalls, package specifier node:test / nodeTest); oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: .oxlintrc.json typescript/no-floating-promises allowForKnownSafeCalls; all test files' nodeTest(...) registrations imported as import { test as nodeTest } from "node:test"
 Directive selectors/inventory and optional duplication bounds: one package-specifier entry { from: "package", package: "node:test", name: ["nodeTest"] }; no directives
 Diagnostic and required contract: node:test's test() returns a Promise that resolves when the test completes, but the runner itself tracks completion and reports failures — awaiting registrations is not required for correctness and node:test's own docs show unawaited top-level test() calls. The strict rule flagged 47 unawaited registrations in tests/ask-question.test.ts alone.
@@ -86,7 +86,7 @@ Review and revisit trigger: if a test file imports test without the alias, or ox
 
 ```text
 ID and title: QX-006 — native-TUI probes of InteractiveMode private internals
-Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: tests/native-tui.test.ts, the single modeInternals cast reaching InteractiveMode's private renderer and switchTuiMode members
 Directive selectors/inventory and optional duplication bounds: one next-line directive on the mode as unknown as {...} declaration; no other site
 Diagnostic and required contract: the native integration test asserts what the user sees (renderer mode, previousLines/previousScreen viewport slices) and switches fullscreen/regular — both are private members of InteractiveMode (renderer at dist/modes/interactive/interactive-mode.d.ts:44, switchTuiMode at :139 in the installed @earendil-works/pi-coding-agent). No public accessor or mode-switching API exists on the installed release, and the file's setup comment notes Pi's own native TUI tests use the same public Terminal injection and internal probing.
@@ -102,7 +102,7 @@ Review and revisit trigger: if Pi publishes a public viewport or mode-switching 
 
 ```text
 ID and title: QX-007 — return cast of the prepareArguments hook
-Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.90.0, oxlint-tsgolint 7.0.2005
+Rule, option, or threshold; installed tool versions: typescript/no-unsafe-type-assertion; oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2
 Scope: extensions/lib/schema.ts, the single return of prepareAskQuestionArguments
 Directive selectors/inventory and optional duplication bounds: one next-line directive on that return statement; no other site
 Diagnostic and required contract: prepareAskQuestionArguments returns the model's raw arguments, with JSON list strings read as lists, as Static<typeof AskQuestionParams>. The Pi SDK types the hook as prepareArguments?: (args: unknown) => Static<TParams> (@earendil-works/pi-coding-agent dist/core/extensions/types.d.ts:490), but it runs before validation: "If defined, it runs before schema validation and before execute() ... Return the object you want validated against parameters" (docs/extensions.md:2302). Pi validates the returned value itself (pi-agent-core dist/agent-loop.js:478 then :498). The value is unvalidated by design, so no type guard can prove the declared return type.

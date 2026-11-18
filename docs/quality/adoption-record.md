@@ -9,12 +9,12 @@
 
 ## Installed toolchain
 
-| Tool                            | Version  |
-| ------------------------------- | -------- |
-| oxlint                          | 1.90.0   |
-| oxlint-tsgolint                 | 7.0.2005 |
-| oxfmt                           | 0.75.0   |
-| typescript (canonical compiler) | 7.0.2    |
+| Tool                            | Version          |
+| ------------------------------- | ---------------- |
+| oxlint                          | 1.94.0           |
+| tsrs                            | 7.1.0-beta.tsrs2 |
+| oxfmt                           | 0.79.0           |
+| typescript (canonical compiler) | 7.0.2            |
 
 ## Configuration and acceptance paths
 
