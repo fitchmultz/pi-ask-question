@@ -118,6 +118,8 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     deps.signal?.addEventListener("abort", this.abort, { once: true });
     if (deps.signal?.aborted === true) {
       this.finish(true);
+    } else {
+      this.syncReservedRows();
     }
   }
 
@@ -235,6 +237,8 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     this.context.toggle(this.overlayHandle);
     if (this.context.reading) {
       this.reservedRows = 0;
+    } else {
+      this.syncReservedRows();
     }
     this.refresh();
   }
@@ -511,18 +515,7 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     return;
   }
 
-  render(width: number): string[] {
-    if (this.context.reading) {
-      return this.context.renderHint(this.theme, width);
-    }
-    const height = this.tui.terminal.rows;
-    if (
-      this.cachedLines !== undefined &&
-      this.cachedWidth === width &&
-      this.cachedHeight === height
-    ) {
-      return this.cachedLines;
-    }
+  private measureLayout(width: number, height: number): string[] {
     if (this.cachedWidth !== width) {
       this.scrolls.resetForWidth();
     }
@@ -536,10 +529,30 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     this.cachedHeight = height;
     this.cachedLines = page.lines;
     this.context.trackHint(page);
-    if (this.reservedRows !== page.lines.length) {
-      this.reservedRows = page.lines.length;
+    return page.lines;
+  }
+
+  private syncReservedRows(): void {
+    const columns = this.tui.terminal.columns;
+    const rows = this.tui.terminal.rows;
+    if (columns > 0 && rows > 0) {
+      this.reservedRows = this.measureLayout(columns, rows).length;
+    }
+  }
+
+  render(width: number): string[] {
+    if (this.context.reading) {
+      return this.context.renderHint(this.theme, width);
+    }
+    const height = this.tui.terminal.rows;
+    const lines =
+      this.cachedLines !== undefined && this.cachedWidth === width && this.cachedHeight === height
+        ? this.cachedLines
+        : this.measureLayout(width, height);
+    if (this.reservedRows !== lines.length) {
+      this.reservedRows = lines.length;
       this.tui.requestRender();
     }
-    return page.lines;
+    return lines;
   }
 }
