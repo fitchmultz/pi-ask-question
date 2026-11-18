@@ -9,7 +9,7 @@ const repo = resolve(import.meta.dirname, "..");
 
 function createTempProject(): string {
   const root = mkdtempSync(join(tmpdir(), "pi-ask-toolchain-"));
-  for (const file of [".oxlintrc.json", "tsconfig.json"]) {
+  for (const file of [".oxlintrc.json", "tsconfig.json", "package.json"]) {
     cpSync(join(repo, file), join(root, file));
   }
   symlinkSync(join(repo, "node_modules"), join(root, "node_modules"));
@@ -101,6 +101,16 @@ nodeTest(
       assert.notEqual(missing.status, 0, "missing type-aware backend must fail closed");
       assert.match(`${missing.stdout}${missing.stderr}`, /Failed to find tsgolint executable/i);
 
+      const tscClean = spawnSync(join(repo, "node_modules", ".bin", "tsc"), ["--noEmit"], {
+        cwd: root,
+        encoding: "utf8",
+      });
+      assert.equal(
+        tscClean.status,
+        0,
+        `clean probe must pass canonical tsc 7.0.2: ${tscClean.stdout}${tscClean.stderr}`,
+      );
+
       writeFileSync(
         probePath,
         'export const invalidAssignment: number = "not-a-number";\nconsole.log(invalidAssignment);\n',
@@ -110,7 +120,10 @@ nodeTest(
         encoding: "utf8",
       });
       assert.notEqual(tsc.status, 0, "canonical tsc 7.0.2 must fail independently on type errors");
-      assert.match(`${tsc.stdout}${tsc.stderr}`, /TS2322/);
+      assert.match(
+        `${tsc.stdout}${tsc.stderr}`,
+        /extensions\/toolchain-probe\.ts\(1,\d+\): error TS2322/,
+      );
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
