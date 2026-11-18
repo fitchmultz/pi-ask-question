@@ -7,7 +7,7 @@ import {
   type Theme,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Text, type Component } from "@earendil-works/pi-tui";
+import { replaceControlCharacters, Text, type Component } from "@earendil-works/pi-tui";
 import type { Static } from "typebox";
 import { askWithDialogs } from "./ask-dialogs.ts";
 import { askWithKeyboard } from "./ask-keyboard.ts";
@@ -18,9 +18,12 @@ import { exactText } from "./text.ts";
 import {
   QUESTION_TIMEOUT_MS,
   TIMEOUT_MESSAGE,
+  type Answer,
   type AskQuestionDetails,
+  type NormalizedQuestion,
   type QuestionTimeout,
 } from "./types.ts";
+import { isRecord, isStringArray } from "./validate.ts";
 
 function createQuestionTimeout(): {
   timeout: QuestionTimeout;
@@ -61,7 +64,7 @@ function renderAskCall(args: Static<typeof AskQuestionParams>, theme: Theme): Co
       : single,
   );
   const count = questions.length;
-  const labels = questions.map((question) => question.id).join(", ");
+  const labels = questions.map((question) => replaceControlCharacters(question.id)).join(", ");
   let text = theme.fg("toolTitle", theme.bold("ask_question "));
   text += theme.fg("muted", `${count} question${count !== 1 ? "s" : ""}`);
   if (labels !== "") {
@@ -70,37 +73,82 @@ function renderAskCall(args: Static<typeof AskQuestionParams>, theme: Theme): Co
   return new Text(text, 0, 0);
 }
 
+type RenderableDetails = {
+  questions: Array<Pick<NormalizedQuestion, "id">>;
+  answers: Answer[];
+  cancelled?: boolean;
+  timedOut?: boolean;
+};
+
+function isRenderableQuestion(value: unknown): value is Pick<NormalizedQuestion, "id"> {
+  return isRecord(value) && typeof value.id === "string";
+}
+
+function isRenderableAnswer(value: unknown): value is Answer {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.question === "string" &&
+    typeof value.answer === "string" &&
+    typeof value.wasCustom === "boolean" &&
+    (value.selectedOptions === undefined || isStringArray(value.selectedOptions))
+  );
+}
+
+function isRenderableDetails(value: unknown): value is RenderableDetails {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.questions) &&
+    Array.isArray(value.answers) &&
+    Array.from(value.questions).every(isRenderableQuestion) &&
+    Array.from(value.answers).every(isRenderableAnswer) &&
+    (value.cancelled === undefined || typeof value.cancelled === "boolean") &&
+    (value.timedOut === undefined || typeof value.timedOut === "boolean")
+  );
+}
+
+function sanitizeLines(text: string): string {
+  return text.split("\n").map(replaceControlCharacters).join("\n");
+}
+
+function renderResultText(result: AgentToolResult<unknown>): string {
+  return result.content
+    .flatMap((block) => (block.type === "text" ? [sanitizeLines(block.text)] : []))
+    .join("\n");
+}
+
 /**
  * Pi builds the result of a call that failed or never ran: the error text it gave the model, with
  * no question details.
  */
 function renderAskError(result: AgentToolResult<unknown>, theme: Theme): Component {
-  const text = result.content
-    .flatMap((block) => (block.type === "text" ? [block.text] : []))
-    .join("\n");
-  return new Text(theme.fg("error", text), 0, 0);
+  return new Text(theme.fg("error", renderResultText(result)), 0, 0);
 }
 
-function renderAskResult(result: AgentToolResult<AskQuestionDetails>, theme: Theme): Component {
+function renderAskResult(result: AgentToolResult<unknown>, theme: Theme): Component {
   const details = result.details;
-  if (details.timedOut) {
-    const content = result.content[0];
-    const text = theme.fg("warning", content?.type === "text" ? content.text : TIMEOUT_MESSAGE);
-    return details.answers.some((answer) => answer.selectedOptions !== undefined)
-      ? exactText(text)
-      : new Text(text, 0, 0);
+  if (!isRenderableDetails(details)) {
+    const text = renderResultText(result);
+    return new Text(text === "" ? "" : theme.fg("toolOutput", text), 0, 0);
   }
-  if (details.cancelled) {
+  const hasMultiSelect = details.answers.some((answer) => answer.selectedOptions !== undefined);
+  if (details.timedOut === true) {
+    const content = result.content[0];
+    const raw = content?.type === "text" ? content.text : TIMEOUT_MESSAGE;
+    const text = theme.fg("warning", sanitizeLines(raw));
+    return hasMultiSelect ? exactText(text) : new Text(text, 0, 0);
+  }
+  if (details.cancelled === true) {
     return new Text(theme.fg("warning", "Cancelled"), 0, 0);
   }
   const lines = details.questions.map((question) => {
     const answer = details.answers.find((entry) => entry.id === question.id);
-    return `${theme.fg("success", "✓ ")}${theme.fg("accent", question.id)}: ${formatAnswer(answer)}`;
+    const id = replaceControlCharacters(question.id);
+    const summary = replaceControlCharacters(formatAnswer(answer));
+    return `${theme.fg("success", "✓ ")}${theme.fg("accent", id)}: ${summary}`;
   });
   const text = lines.join("\n");
-  return details.answers.some((answer) => answer.selectedOptions !== undefined)
-    ? exactText(text)
-    : new Text(text, 0, 0);
+  return hasMultiSelect ? exactText(text) : new Text(text, 0, 0);
 }
 
 /** Build the registered ask_question tool bound to one observer. */
