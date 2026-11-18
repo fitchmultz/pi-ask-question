@@ -18,7 +18,7 @@ export function wrapByColumn(text: string, width: number): string[] {
 /** Render text without re-wrapping, so exact JSON answer text survives. */
 export function exactText(text: string): Component {
   return {
-    render(width: number): string[] {
+    render(width: number): ReturnType<Component["render"]> {
       const wrapped = text
         .split("\n")
         .flatMap((line) => wrapByColumn(line, width))
