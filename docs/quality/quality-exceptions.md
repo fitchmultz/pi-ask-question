@@ -76,8 +76,8 @@ Directive selectors/inventory and optional duplication bounds: one package-speci
 Diagnostic and required contract: node:test's test() returns a Promise that resolves when the test completes, but the runner itself tracks completion and reports failures — awaiting registrations is not required for correctness and node:test's own docs show unawaited top-level test() calls. The strict rule flagged 47 unawaited registrations in tests/ask-question.test.ts alone.
 Actual compliant alternative and demonstrated quality cost: awaiting every registration serializes test scheduling the runner is designed to handle concurrently and adds await noise to 49 registration sites; using .then/.catch per registration adds 49 handler stubs. The distinct nodeTest alias plus declaration-origin matching keeps the allowance precise where a plain "test" string specifier would also permit unsafe same-named calls.
 Chosen adjustment and why its scope is appropriate: allowance matches the node:test package declaration named nodeTest only. All three test files import { test as nodeTest }, so the alias is the sole registration symbol; any other floating Promise still fails.
-Structural comparison or unsafe-type evidence, where applicable: the six Section 6.4 controls, run against the actual installed declarations and imports with npx oxlint --deny-warnings on transient probe files (not committed): (1) unawaited top-level nodeTest(...) registration passes; (2) unawaited t.test(...) context subtest fails; (3) unawaited local Promise-returning function named nodeTest fails; (4) unawaited same-named import from another module fails; (5) floating Promise inside a test body fails; (6) unawaited unrelated Promise-returning call fails. All six produced the intended outcomes.
-Verification commands, relevant tests, and results: npx oxlint --deny-warnings tests (0 findings); npm test (74/74 across the three test files).
+Structural comparison or unsafe-type evidence, where applicable: the six Section 6.4 controls, requalified 2026-11-18 against oxlint 1.94.0 + tsrs 7.1.0-beta.tsrs2 + @types/node 24.19.1 with ./node_modules/.bin/oxlint --deny-warnings on transient probes in tests/ (not committed): (1) unawaited top-level nodeTest(...) registration passes (exit 0); (2) unawaited t.test(...) context subtest fails (exit 1); (3) unawaited local async function nodeTest fails (exit 1); (4) unawaited same-named import from a local helper module fails (exit 1); (5) floating Promise inside a test body fails (exit 1); (6) unawaited unrelated Promise-returning call fails (exit 1). All six produced the intended outcomes.
+Verification commands, relevant tests, and results: npm run lint (0 findings across repo); npm test (passes across tests/*.test.ts).
 Retained protection, lost detection, and established assumptions: floating Promises everywhere else — including context subtests, in-body promises, and same-named local or cross-module functions — remain detected, as the controls demonstrate. Assumption: the nodeTest alias remains used only for node:test registrations.
 Review and revisit trigger: if a test file imports test without the alias, or oxlint changes specifier semantics, re-run the six controls.
 ```
@@ -112,4 +112,20 @@ Structural comparison or unsafe-type evidence, where applicable: the cast value 
 Verification commands, relevant tests, and results: npm run typecheck (0 errors); npm test (90/90 pass, including the bundled-CLI cases in tests/rpc-ui.test.ts where a model sends list strings through Pi's preparation and validation); npx oxlint --deny-warnings . (0 findings).
 Retained protection, lost detection, and established assumptions: only this return is exempt; any other unknown-to-narrower assertion still fails lint. Assumption: Pi keeps validating the hook's return value. The bundled-CLI tests fail if it stops.
 Review and revisit trigger: if the Pi SDK types the hook's return as unvalidated input, drop the cast and this exception.
+```
+
+## QX-008: Prerelease `tsrs` type-aware backend in place of stable `oxlint-tsgolint`
+
+```text
+ID and title: QX-008 — adopt prerelease tsrs@7.1.0-beta.tsrs2 as the type-aware lint backend in place of stable oxlint-tsgolint
+Rule, option, or threshold; installed tool versions: Standard §5.1 ("latest stable published releases of Oxlint, oxlint-tsgolint, Oxfmt"); oxlint 1.94.0 (2026-11-16T12:26Z), tsrs 7.1.0-beta.tsrs2 (2026-11-16T11:59Z), oxfmt 0.79.0 (2026-11-16T12:27Z), typescript 7.0.2
+Scope: package.json / package-lock.json devDependencies and type-aware lint execution across the repository (oxlint discovers node_modules/.bin/tsrs-lint natively)
+Directive selectors/inventory and optional duplication bounds: none; backend package substitution only (QX-001 through QX-007 inventories stay unchanged)
+Diagnostic and required contract: Standard §5.1 asks for stable published releases, whereas tsrs publishes prereleases only (dist-tags.latest is 0.25.0-ts7.1.0-beta; 7.1.0-beta.tsrs2 is an untagged newer prerelease; stable oxlint-tsgolint 7.0.2007 remains published on npm).
+Actual compliant alternative and demonstrated quality cost: keeping stable oxlint-tsgolint@7.0.2007 satisfies §5.1 literally at ~2.9x–5.3x slower type-aware lint runtime and ~3x–6x higher peak memory across ecosystem repos.
+Chosen adjustment and why its scope is appropriate: owner-approved substitution of tsrs@7.1.0-beta.tsrs2; oxlint 1.94.0 discovers tsrs-lint automatically and fails closed (exit 1) when no backend executable exists. All Appendix A type-aware rules and tsc compiler checks stay intact.
+Structural comparison or unsafe-type evidence, where applicable: verified by requalifying the six QX-005 §6.4 controls above and running repo-wide npm run check against oxlint 1.94.0 + tsrs 7.1.0-beta.tsrs2.
+Verification commands, relevant tests, and results: npm run check (npm run lint && npm test && npm run typecheck && npm run format:check && npm pack --dry-run) exits 0 on 2026-11-18.
+Retained protection, lost detection, and established assumptions: all type-aware lint rules, QX-001..QX-007 safeguards, and tsc compiler checks remain active; assumes tsrs@7.1.0-beta.tsrs2 keeps diagnostic parity with oxlint-tsgolint.
+Review and revisit trigger: first stable tsrs release, any oxlint release changing backend discovery, or any type-aware diagnostic regression.
 ```
