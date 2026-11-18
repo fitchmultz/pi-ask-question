@@ -9,12 +9,12 @@
 
 ## Installed toolchain
 
-| Tool                            | Version  |
-| ------------------------------- | -------- |
-| oxlint                          | 1.90.0   |
-| oxlint-tsgolint                 | 7.0.2005 |
-| oxfmt                           | 0.75.0   |
-| typescript (canonical compiler) | 7.0.2    |
+| Tool                            | Version                                                    |
+| ------------------------------- | ---------------------------------------------------------- |
+| oxlint                          | 1.94.0                                                     |
+| tsrs                            | 7.1.0-beta.tsrs2 (replaces `oxlint-tsgolint` under QX-008) |
+| oxfmt                           | 0.79.0                                                     |
+| typescript (canonical compiler) | 7.0.2                                                      |
 
 ## Configuration and acceptance paths
 
@@ -47,12 +47,12 @@ Phased enforcement under standard Section 9.2. Each phase lands only when its de
 | Source lint compliance (`extensions/`)                      | Done   |
 | Test lint compliance and repository-wide lint enforcement   | Done   |
 
-Repository-wide adoption is complete per standard Section 10.2. Quality exceptions in force: QX-001 through QX-007 in [quality-exceptions.md](quality-exceptions.md).
+Repository-wide adoption is complete per standard Section 10.2. Quality exceptions in force: QX-001 through QX-008 in [quality-exceptions.md](quality-exceptions.md).
 
 ## Verification
 
-| Revision     | Scope                                                                                                                                                                                          | Result                            |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| this change  | `npm test` (74 passing), `npm run typecheck` (0 errors), `npm run format:check` (clean, idempotent)                                                                                            | Passed locally; hosted CI pending |
-| source phase | `npm test` (74 passing), `npm run typecheck` (0 errors), `npx oxlint --deny-warnings extensions` (0 findings), `npm run format:check` (clean)                                                  | Passed locally; hosted CI pending |
-| test phase   | `npm run lint` (0 findings repository-wide), `npm test` (74 passing across all three test files), `npm run typecheck` (0 errors), `npm run format:check` (clean), `npm pack --dry-run` (clean) | Passed locally; hosted CI pending |
+| Revision     | Scope                                                                                                                                                                                                                          | Result                                   |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| this change  | `npm run check` (`npm run lint && npm test && npm run typecheck && npm run format:check && npm pack --dry-run`) on 2026-11-18 with oxlint 1.94.0 + tsrs 7.1.0-beta.tsrs2 + oxfmt 0.79.0, plus QX-005 6-control requalification | Passed locally; hosted CI runs on PR #89 |
+| source phase | `npm test` (74 passing), `npm run typecheck` (0 errors), `npx oxlint --deny-warnings extensions` (0 findings), `npm run format:check` (clean)                                                                                  | Passed locally; hosted CI pending        |
+| test phase   | `npm run lint` (0 findings repository-wide), `npm test` (74 passing across all three test files), `npm run typecheck` (0 errors), `npm run format:check` (clean), `npm pack --dry-run` (clean)                                 | Passed locally; hosted CI pending        |
