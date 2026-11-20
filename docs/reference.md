@@ -4,7 +4,7 @@
 
 ## Installation and updates
 
-Requires Pi 1.5.2 or newer and Node.js 24.22.3 (24.x) or 26.13.1 and later.
+Requires Pi 1.6.0 or newer and Node.js 24.22.3 (24.x) or 26.13.1 and later.
 
 The owned npm package is `@fitchmultz/pi-ask-question`:
 
@@ -79,7 +79,7 @@ In a session without a UI, the extension registers the tool again with `exposure
 
 A journal that declared `ask_question` and is resumed without a UI records the tool as removed at its next request. Pi keeps a removed tool removed, so the tool stays off when that journal is opened with a UI again. Start that session with `--tools +ask_question` to offer it again.
 
-The check before each agent run covers the sessions that Pi starts without a session start event: an SDK session that never binds extensions, and a reloaded SDK session that bound no UI context, command actions, shutdown handler, or error listener. The tool also checks at call time. A call that reaches it without a UI returns this error:
+The check before each agent run covers an SDK session that never binds extensions, where Pi emits no `session_start` event. The tool also checks at call time. A call that reaches it without a UI returns this error:
 
 > ask_question cannot show a question: this session has no Pi TUI or RPC client. Ask in your reply instead.
 

@@ -540,7 +540,7 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     }
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     if (this.context.reading) {
       return this.context.renderHint(this.theme, width);
     }
