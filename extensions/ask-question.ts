@@ -18,8 +18,7 @@ export default function askQuestion(pi: ExtensionAPI): void {
     }
   };
   pi.on("session_start", withdrawWithoutUi);
-  // Pi announces no session start to an SDK session that never binds extensions, and none after a
-  // reload unless the host bound a UI, command actions, a shutdown handler or an error listener.
+  // Pi announces no session start to an SDK session that never binds extensions.
   // This event precedes the first request of every run.
   pi.on("before_agent_start", withdrawWithoutUi);
   registerGrillMe(pi);

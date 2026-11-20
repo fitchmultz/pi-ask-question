@@ -387,10 +387,10 @@ nodeTest(
   },
 );
 
-// Pi announces a session start on bind, and on reload only when the host bound a UI context,
-// command actions, a shutdown handler or an error listener. These SDK sessions get neither.
+// Pi announces no session start to an SDK session that never binds extensions, and a session
+// bound with no UI and then reloaded must also keep the tool withdrawn.
 nodeTest(
-  "an SDK session without a UI does not offer ask_question when Pi announces no session start",
+  "an SDK session without a UI does not offer ask_question when unbound or reloaded after an empty bind",
   { timeout: 20_000 },
   async (t) => {
     const endpoint = await startModelEndpoint();

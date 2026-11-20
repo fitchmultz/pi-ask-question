@@ -4,44 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test as nodeTest } from "node:test";
 import { fileURLToPath } from "node:url";
-import type {
-  BuildSystemPromptOptions,
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionRunner,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import type { Terminal } from "@earendil-works/pi-tui";
 import type { WaitingPromptState } from "../extensions/lib/remote-answers.ts";
 import type { Answer, AskQuestionDetails } from "../extensions/lib/types.ts";
-
-type LegacyBeforeAgentStart = (
-  prompt: string,
-  images: undefined,
-  options: BuildSystemPromptOptions,
-) => ReturnType<ExtensionRunner["emitBeforeAgentStart"]>;
-type TriggerBeforeAgentStart = (
-  trigger: { messageType: "user"; prompt: string },
-  options: BuildSystemPromptOptions,
-) => ReturnType<ExtensionRunner["emitBeforeAgentStart"]>;
-
-function usesLegacyBeforeAgentStart(
-  emit: LegacyBeforeAgentStart | TriggerBeforeAgentStart,
-): emit is LegacyBeforeAgentStart {
-  // Official Pi 1.1.0 takes three arguments; newer hosts take a trigger and options.
-  return emit.length === 3;
-}
-
-function emitUserBeforeAgentStart(
-  runner: { emitBeforeAgentStart: LegacyBeforeAgentStart | TriggerBeforeAgentStart },
-  prompt: string,
-  options: BuildSystemPromptOptions,
-) {
-  const emit: LegacyBeforeAgentStart | TriggerBeforeAgentStart =
-    runner.emitBeforeAgentStart.bind(runner);
-  return usesLegacyBeforeAgentStart(emit)
-    ? emit(prompt, undefined, options)
-    : emit({ messageType: "user", prompt }, options);
-}
 
 // Use Pi's public Terminal injection, as its native TUI tests do. No process
 // terminal, clipboard, renderer mock, or custom() double participates here.
@@ -326,10 +292,10 @@ nodeTest(
       await t.test("grill-me preserves instructions added by a later extension", async () => {
         try {
           await runtime.session.prompt("/grill-me on");
-          await emitUserBeforeAgentStart(runtime.session.extensionRunner, "test", {
-            cwd: home,
-            selectedTools: ["ask_question"],
-          });
+          await runtime.session.extensionRunner.emitBeforeAgentStart(
+            { messageType: "user", prompt: "test" },
+            { cwd: home, selectedTools: ["ask_question"] },
+          );
           assert.ok(
             promptAfterLaterExtension.includes(`<cwd>\n${otherCwd}\n</cwd>`),
             "The model sees the updated working directory",
@@ -1326,10 +1292,10 @@ nodeTest(
             false,
           );
           const assertEnabled = async () => {
-            await emitUserBeforeAgentStart(runtime.session.extensionRunner, "test", {
-              cwd: home,
-              selectedTools: ["ask_question"],
-            });
+            await runtime.session.extensionRunner.emitBeforeAgentStart(
+              { messageType: "user", prompt: "test" },
+              { cwd: home, selectedTools: ["ask_question"] },
+            );
             assert.match(promptAfterLaterExtension, /\/grill-me mode is active/);
             assert.ok(
               runtime.session.getActiveToolNames().includes("ask_question"),
