@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.6.20 - 2026-11-20
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- chore: raise Pi floor to 1.6.0 and remove pre-1.6.0 shims (PEA-222) (#91) ([53657dd](https://github.com/fitchmultz/pi-ask-question/commit/53657dd30a40a93eece8d3bfe9d6cdf2ebbbb831))
+
+### What's Changed
+
+- chore: bump Pi floor to 1.6.0 and remove pre-1.6.0 shims (PEA-222) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/91
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.19...v0.6.20
+
 ## 0.6.19 - 2026-11-18
 
 <!-- npm-release:unreleased:start -->
