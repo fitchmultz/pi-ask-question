@@ -48,4 +48,4 @@ The package file allowlist excludes `docs/` and `.github/readme/`; the diagram s
 
 ## README diagram
 
-The editable source is [`.github/readme/question-flow.svg`](../.github/readme/question-flow.svg), with a rendered PNG alongside it. It shows the normal question/answer flow and the separate five-minute timeout. The rendering uses `rsvg-convert`; inspect the full image and a preview at GitHub's column width after editing the SVG.
+The editable source is [`.github/readme/question-flow.svg`](../.github/readme/question-flow.svg), with a rendered PNG alongside it. It shows the normal question/answer flow and the separate ten-minute timeout. The rendering uses `rsvg-convert`; inspect the full image and a preview at GitHub's column width after editing the SVG.

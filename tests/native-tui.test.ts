@@ -540,7 +540,7 @@ nodeTest(
               assert.equal(initial.status, "waiting");
               assert.equal(initial.nativeRoot, runtime.session.sessionManager.getSessionId());
               assert.equal(initial.deadline, waitingState(states).deadline);
-              assert.ok(initial.deadline > Date.now() && initial.deadline <= Date.now() + 300_000);
+              assert.ok(initial.deadline > Date.now() && initial.deadline <= Date.now() + 600_000);
               assert.ok(viewport().some((line) => line.includes("Remote first?")));
               bus().emit("pi-ask-question:answer", {
                 ...initial,
@@ -642,7 +642,7 @@ nodeTest(
               assert.ok(
                 viewport().some((line) => line.includes("No time limit while you answer.")),
               );
-              now += 300_001;
+              now += 600_001;
               terminal.send("\r");
               await nextRender();
               bus().emit("pi-ask-question:query", { protocolVersion: 1, queryId: "after-typing" });

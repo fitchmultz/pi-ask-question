@@ -14,7 +14,7 @@ import {
 } from "@earendil-works/pi-tui";
 import { formatAnswer } from "./normalize.ts";
 import { wrapByColumn } from "./text.ts";
-import type { Answer, NormalizedQuestion } from "./types.ts";
+import { QUESTION_TIMEOUT_MINUTES, type Answer, type NormalizedQuestion } from "./types.ts";
 
 /** Read-only form surface the page builders render from. */
 export type FormView = {
@@ -391,7 +391,7 @@ function addFooter(page: PageBuilder, view: FormView): void {
     page,
     view,
     view.timeoutActive
-      ? "Auto-continues after 5 minutes without interaction."
+      ? `Auto-continues after ${QUESTION_TIMEOUT_MINUTES} minutes without interaction.`
       : "No time limit while you answer.",
     {
       style: (text) => view.theme.fg("dim", text),

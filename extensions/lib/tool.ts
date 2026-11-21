@@ -16,6 +16,7 @@ import type { QuestionObserver } from "./question-observer.ts";
 import { AskQuestionParams, prepareAskQuestionArguments } from "./schema.ts";
 import { exactText } from "./text.ts";
 import {
+  QUESTION_TIMEOUT_MINUTES,
   QUESTION_TIMEOUT_MS,
   TIMEOUT_MESSAGE,
   type Answer,
@@ -159,8 +160,7 @@ export function createAskQuestionTool(
   return defineTool<typeof AskQuestionParams, AskQuestionDetails>({
     name: "ask_question",
     label: "Ask Question",
-    description:
-      "Ask the user one or more clarifying questions through pi's UI. After 5 minutes without interaction, returns an AFK reply so you can continue already-authorized work and routine choices without treating silence as an answer to a material question or as approval.",
+    description: `Ask the user one or more clarifying questions through pi's UI. After ${QUESTION_TIMEOUT_MINUTES} minutes without interaction, returns an AFK reply so you can continue already-authorized work and routine choices without treating silence as an answer to a material question or as approval.`,
     promptSnippet: "Ask the user clarifying questions through pi's UI",
     promptGuidelines: [
       "For ask_question, list options from most recommended to least; the first option is the recommended choice, and do not label it as recommended.",
