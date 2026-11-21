@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Wait ten minutes instead of five before an untouched `ask_question` call returns the AFK reply.
+
 ## 0.6.20 - 2026-11-20
 
 <!-- npm-release:unreleased:start -->

@@ -39,14 +39,15 @@ export type QuestionResult = {
   cancelled: boolean;
 };
 
-/** Cooperative five-minute inactivity timeout for one question set. */
+/** Cooperative inactivity timeout (`QUESTION_TIMEOUT_MS`) for one question set. */
 export type QuestionTimeout = {
   deadline: number;
   readonly active: boolean;
   stop: () => boolean;
 };
 
-export const QUESTION_TIMEOUT_MS = 5 * 60 * 1000;
+export const QUESTION_TIMEOUT_MINUTES = 10;
+export const QUESTION_TIMEOUT_MS = QUESTION_TIMEOUT_MINUTES * 60 * 1000;
 export const TIMEOUT_MESSAGE =
   "Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.";
 export const CUSTOM_OPTION = "Type a custom answer";

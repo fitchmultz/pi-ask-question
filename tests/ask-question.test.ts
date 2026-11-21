@@ -963,7 +963,7 @@ function pendingDialog(
 }
 
 nodeTest(
-  "ask_question returns the AFK reply at exactly five minutes without choosing an option",
+  "ask_question returns the AFK reply at exactly ten minutes without choosing an option",
   async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const harness = fakeHarness();
@@ -978,12 +978,12 @@ nodeTest(
     );
     const component = harness.getCustomComponent();
 
-    t.mock.timers.tick(299_999);
+    t.mock.timers.tick(599_999);
     assert.equal(harness.getCustomDoneCalls(), 0);
     t.mock.timers.tick(1);
     assert.equal(harness.getCustomDoneCalls(), 1);
     const result = await execution;
-    assert.match(component.render(80).join("\n"), /Auto-continues after 5 minutes/);
+    assert.match(component.render(80).join("\n"), /Auto-continues after 10 minutes/);
 
     assert.deepEqual(result.details.answers, []);
     assert.equal(result.details.timedOut, true);
@@ -991,23 +991,23 @@ nodeTest(
     assert.equal(controller.signal.aborted, false);
     assert.equal(
       contentText(result),
-      "Timed out after 5 minutes. Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.",
+      "Timed out after 10 minutes. Mitch is currently AFK. A timeout does not answer a material scope, safety, or acceptance question or grant approval. Continue already-authorized work and use your best judgement for routine choices.",
     );
     const rendered = tool
       .renderResult(result, { expanded: false, isPartial: false }, harness.theme, harness.ctx)
       .render(80)
       .join("\n");
-    assert.match(rendered, /Timed out after 5 minutes/);
+    assert.match(rendered, /Timed out after 10 minutes/);
     assert.match(rendered, /AFK/);
     assert.doesNotMatch(rendered, /Cancelled|✓|User answered/);
     controller.abort();
-    t.mock.timers.tick(300_000);
+    t.mock.timers.tick(600_000);
     assert.equal(harness.getCustomDoneCalls(), 1);
   },
 );
 
 nodeTest(
-  "interaction keeps a question set open beyond five minutes without affecting the next call",
+  "interaction keeps a question set open beyond ten minutes without affecting the next call",
   async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout"] });
     const harness = fakeHarness();
@@ -1026,13 +1026,13 @@ nodeTest(
     );
     const component = harness.getCustomComponent();
     try {
-      t.mock.timers.tick(200_000);
+      t.mock.timers.tick(400_000);
       component.handleInput("\r");
       component.handleInput(" ");
       component.handleInput("\u001b[B");
       component.handleInput("\r");
       component.handleInput("A lengthy draft");
-      t.mock.timers.tick(400_000);
+      t.mock.timers.tick(800_000);
       assert.equal(
         harness.getCustomDoneCalls(),
         0,
@@ -1060,7 +1060,7 @@ nodeTest(
       undefined,
       harness.ctx,
     );
-    t.mock.timers.tick(300_000);
+    t.mock.timers.tick(600_000);
     assert.equal((await next).details.timedOut, true, "A new untouched question still times out");
   },
 );
@@ -1080,7 +1080,7 @@ nodeTest("a mouse interaction keeps the question open", async (t) => {
     const component = harness.getCustomComponent();
     try {
       component.handleMouse(mouseEvent(type, 2, 2));
-      t.mock.timers.tick(300_000);
+      t.mock.timers.tick(600_000);
       assert.equal(harness.getCustomDoneCalls(), 0);
       assert.match(component.render(80).join("\n"), /No time limit while you answer/);
       component.handleInput("\r");
@@ -1106,11 +1106,11 @@ nodeTest("RPC choices keep later dialogs open past the original timeout", async 
       pendingSignal = args[2]?.signal;
       return pendingDialog(...args);
     }
-    t.mock.timers.tick(120_000);
+    t.mock.timers.tick(240_000);
     return select(...args);
   };
   harness.ctx.ui.input = async (...args) => {
-    t.mock.timers.tick(50_000);
+    t.mock.timers.tick(100_000);
     return input(...args);
   };
   const controller = new AbortController();
@@ -1131,7 +1131,7 @@ nodeTest("RPC choices keep later dialogs open past the original timeout", async 
       setImmediate(resolve);
     });
     assert.ok(pendingSignal);
-    t.mock.timers.tick(130_000);
+    t.mock.timers.tick(260_000);
     assert.equal(pendingSignal.aborted, false);
   } finally {
     controller.abort();
@@ -1170,7 +1170,7 @@ nodeTest(
       await new Promise<void>((resolve) => {
         setImmediate(resolve);
       });
-      t.mock.timers.tick(300_000);
+      t.mock.timers.tick(600_000);
       assert.equal(pendingSignal?.aborted, false, "An open custom answer must not time out");
     } finally {
       controller.abort();
@@ -1195,7 +1195,7 @@ nodeTest("ask_question clears its timer after an answer, cancellation, or UI err
     const result = await execution;
     assert.equal(result.details.timedOut, false);
     assert.equal(result.details.cancelled, key === "\u001b");
-    t.mock.timers.tick(300_000);
+    t.mock.timers.tick(600_000);
     assert.equal(harness.getCustomDoneCalls(), 1);
   }
   const harness = fakeHarness();
@@ -1288,7 +1288,7 @@ nodeTest(
       const initial = busState(harness);
       assert.equal(initial.timeoutActive, true);
       harness.getCustomComponent().handleInput("\u001b[B");
-      t.mock.timers.tick(300_000);
+      t.mock.timers.tick(600_000);
       harness.events.emit("pi-ask-question:query", {
         queryId: "after-interaction",
         protocolVersion: 1,
@@ -1326,7 +1326,7 @@ nodeTest(
     t.mock.timers.setTime(stateNumber(target, "deadline"));
     harness.reply(target, "too late");
     assert.equal(harness.receipts.at(-1)?.status, "stale");
-    t.mock.timers.tick(300_000);
+    t.mock.timers.tick(600_000);
     assert.equal((await execution).details.timedOut, true);
   },
 );
@@ -1347,7 +1347,7 @@ nodeTest(
     harness.events.on("pi-ask-question:lookup-result", (data: LookupResult) => lookups.push(data));
     const query = () =>
       harness.events.emit("pi-ask-question:query", { queryId: "late", protocolVersion: 1 });
-    t.mock.timers.tick(200_000);
+    t.mock.timers.tick(400_000);
     query();
     const target = lastOf(snapshots);
     assert.equal(
@@ -1355,7 +1355,7 @@ nodeTest(
       "waiting",
       "An observer attaching after waiting was emitted receives a snapshot",
     );
-    assert.equal(target.deadline, 301_000);
+    assert.equal(target.deadline, 601_000);
     assert.equal(target.nativeRoot, "native-test-root");
     assert.equal(typeof target.ownerGeneration, "string");
     for (const changed of [
@@ -1672,13 +1672,13 @@ nodeTest(
       controller.signal,
     );
     try {
-      t.mock.timers.tick(200_000);
+      t.mock.timers.tick(400_000);
       harness.reply(busState(harness), "saved");
       await flushState();
       const target = busState(harness);
-      assert.equal(target.deadline, 301_000);
+      assert.equal(target.deadline, 601_000);
       assert.equal(target.timeoutActive, false);
-      t.mock.timers.tick(100_000);
+      t.mock.timers.tick(200_000);
       assert.equal(harness.getCustomDoneCalls(), 0);
       harness.reply(target, "second answer", "after-deadline");
       assert.equal(harness.receipts.at(-1)?.status, "answered");

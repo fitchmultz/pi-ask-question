@@ -2,7 +2,7 @@
 
 This [Pi](https://github.com/earendil-works/pi) extension asks for your decisions before the agent continues a task. Use `/grill-me` to guide the agent through unclear requirements.
 
-![Pi calls ask_question, shows choices, and returns your answer to the agent. Five minutes without interaction returns an AFK reply.](.github/readme/question-flow.png)
+![Pi calls ask_question, shows choices, and returns your answer to the agent. Ten minutes without interaction returns an AFK reply.](.github/readme/question-flow.png)
 
 ## Install
 
@@ -33,7 +33,7 @@ Escape leaves the custom answer editor; otherwise, it cancels the question. Your
 
 ## Limits
 
-An untouched question times out after five minutes, and the agent receives an AFK reply to continue already-authorized work and routine choices without treating the timeout as an answer to a material question or as approval. Once you interact, there is no time limit for that question or question set. Each new call starts its own timer.
+An untouched question times out after ten minutes, and the agent receives an AFK reply to continue already-authorized work and routine choices without treating the timeout as an answer to a material question or as approval. Once you interact, there is no time limit for that question or question set. Each new call starts its own timer.
 
 In RPC mode, Pi learns about interaction when the client submits a dialog choice; navigating an unsubmitted dialog is not visible to Pi.
 

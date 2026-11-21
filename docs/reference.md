@@ -91,7 +91,7 @@ Answers are returned in tool result text and structured `details`:
 - `answers` contains saved answers with `id`, `question`, `answer`, and `wasCustom`.
 - Multi-select answers also contain `selectedOptions`. Tool text and the review show an unambiguous JSON array; the comma-joined `answer` field remains available.
 - `cancelled` reports user or caller cancellation.
-- `timedOut` reports an untouched five-minute timeout separately from cancellation.
+- `timedOut` reports an untouched ten-minute timeout separately from cancellation.
 
 The configured selection-cancel binding cancels the question and reports cancellation to the model.
 
@@ -124,9 +124,9 @@ These are the default controls. The UI shows your configured bindings, except fo
 | Read a long question while editing a custom answer                             | Shift+PageUp/Shift+PageDown                                |
 | Cancel the question, or return from a custom-answer edit to the choices        | Escape                                                     |
 
-## Five-minute timeout
+## Ten-minute timeout
 
-Each `ask_question` call starts a five-minute timer. In the TUI, any keyboard or mouse interaction with the question, including opening the conversation view, disables the timer for that call. An accepted cooperative answer also disables it. A question set stays open after its first interaction, including while typing an answer or reviewing the remaining questions. Each new call starts a fresh timer.
+Each `ask_question` call starts a ten-minute timer. In the TUI, any keyboard or mouse interaction with the question, including opening the conversation view, disables the timer for that call. An accepted cooperative answer also disables it. A question set stays open after its first interaction, including while typing an answer or reviewing the remaining questions. Each new call starts a fresh timer.
 
 In RPC mode, Pi receives a response only when the client submits or cancels a dialog. Submitting a choice disables the timer for the rest of the call, including custom text entry. Navigation or typing within an unsubmitted dialog is not visible to Pi; the timeout remains active until a response arrives.
 
@@ -210,7 +210,7 @@ Subscribe before emitting a query. The owner responds on the same process-local 
 
 - `queryId` follows the same nonblank, 128-code-unit bound as answer `requestId`. It correlates an observation, not an answer attempt.
 - `nativeRoot` is the exact native session ID. `ownerGeneration` is a new UUID per loaded extension runtime, not an Intercom peer or authorization grant. Freeze both with the complete question target. Reload/session replacement invalidates the old generation.
-- `deadline` is the original call's five-minute deadline in Unix milliseconds and stays stable for target matching and receipts. `timeoutActive` is `true` until interaction disables the timeout; only while it is `true` does the deadline expire the target. Querying does not count as interaction. Clients must use both fields when deciding whether a target has expired.
+- `deadline` is the original call's ten-minute deadline in Unix milliseconds and stays stable for target matching and receipts. `timeoutActive` is `true` until interaction disables the timeout; only while it is `true` does the deadline expire the target. Querying does not count as interaction. Clients must use both fields when deciding whether a target has expired.
 - A query reads the current owner directly, including changes not yet emitted as coalesced state events. `idle` means no remotely answerable question **now**, including local editing or review; it is not proof that the tool call ended. RPC, print/JSON and incompatible protocol versions return `unsupported`. Before session startup, mode/root may be unavailable. An older extension without this handshake sends no response; never substitute keyboard injection or a guessed deadline.
 - Versioned answers must match protocol, owner generation, native root, deadline, prompt, question and revision. The legacy unversioned form retains its original prompt/revision guards.
 - Lookup is read-only. `answered` attests that the original owner applied this answer ID; it does not promise that a later local edit preserved that value, or that the model/task completed. It returns the accepted target and a lowercase SHA-256 fingerprint of UTF-8 `JSON.stringify([1, ownerGeneration, nativeRoot, promptId, questionId, revision, deadline, answer])`, using the exact submitted string/array before trimming.

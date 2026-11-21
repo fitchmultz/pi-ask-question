@@ -1,6 +1,12 @@
 /** Question normalization and answer summarizing. */
 
-import { TIMEOUT_MESSAGE, type Answer, type NormalizedQuestion, type Question } from "./types.ts";
+import {
+  QUESTION_TIMEOUT_MINUTES,
+  TIMEOUT_MESSAGE,
+  type Answer,
+  type NormalizedQuestion,
+  type Question,
+} from "./types.ts";
 
 /** Trim a value and drop empty results; undefined passes through. */
 export function clean(value: string | undefined): string | undefined {
@@ -100,7 +106,7 @@ export function summarize(
 ): string {
   if (timedOut) {
     return [
-      `Timed out after 5 minutes. ${TIMEOUT_MESSAGE}`,
+      `Timed out after ${QUESTION_TIMEOUT_MINUTES} minutes. ${TIMEOUT_MESSAGE}`,
       ...(answers.size > 0
         ? [
             "",
