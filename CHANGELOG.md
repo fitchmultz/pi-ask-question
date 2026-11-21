@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+## 0.6.21 - 2026-11-21
+
+<!-- npm-release:unreleased:start -->
+
 - Wait ten minutes instead of five before an untouched `ask_question` call returns the AFK reply.
+
+<!-- npm-release:unreleased:end -->
+
+- ci: refresh the shared automation pin to 1f78bd6 (PEA-225) (#92) ([41aa31c](https://github.com/fitchmultz/pi-ask-question/commit/41aa31ca83bbc8d2a9cf9cd1c95cd855a2ba31c1))
+
+### What's Changed
+
+- ci: refresh the shared automation pin to 1f78bd6 (PEA-225) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/92
+- feat: wait ten minutes before an untouched question auto-continues (PAQ-201) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/93
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.20...v0.6.21
 
 ## 0.6.20 - 2026-11-20
 
