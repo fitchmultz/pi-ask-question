@@ -345,6 +345,27 @@ nodeTest(
               rows.some((line) => line.includes("Final detail needed for the decision.")),
               "The preceding context is visible",
             );
+            if (tuiMode === "fullscreen") {
+              const questionRow = rows.findIndex((line) => line.includes("Which option?"));
+              const transcript = () => viewport().slice(0, questionRow - 1);
+              const before = transcript();
+              terminal.send(`\x1b[<65;1;${questionRow + 1}M`);
+              await nextRender();
+              assert.ok(
+                viewport().some((line) => line.includes(">") && line.includes("Second")),
+                "Wheel down highlights the next choice",
+              );
+              terminal.send(`\x1b[<64;1;${questionRow + 1}M`);
+              await nextRender();
+              terminal.send(`\x1b[<72;1;${questionRow + 1}M`);
+              await nextRender();
+              assert.deepEqual(transcript(), before, "Wheel at the first choice stays inside");
+              terminal.send("\x1b[<72;1;1M");
+              await nextRender();
+              assert.notDeepEqual(transcript(), before, "Wheel outside scrolls the transcript");
+              terminal.send("\x1b[<73;1;1M");
+              await nextRender();
+            }
             terminal.send("\x0f");
             await nextRender();
             assert.ok(
@@ -355,6 +376,19 @@ nodeTest(
               viewport().some((line) => line.includes("Final detail needed for the decision.")),
             );
             if (tuiMode === "fullscreen") {
+              const contextHintRow =
+                viewport().findIndex((line) => line.includes("return to question")) + 1;
+              assert.ok(contextHintRow > 0);
+              const beforeHintWheel = viewport();
+              terminal.send(`\x1b[<72;1;${contextHintRow}M`);
+              await nextRender();
+              assert.notDeepEqual(
+                viewport(),
+                beforeHintWheel,
+                "Wheel over the context-view hint row scrolls the conversation",
+              );
+              terminal.send(`\x1b[<73;1;${contextHintRow}M`);
+              await nextRender();
               terminal.send("\x1b[5~");
               await nextRender();
               assert.ok(

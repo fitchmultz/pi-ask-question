@@ -295,8 +295,8 @@ function contentText(result: AgentToolResult<AskQuestionDetails>): string {
   return "";
 }
 
-/** A minimal mouse event; only type, button, x, and y affect the form. */
-function mouseEvent(type: "press" | "move", x: number, y: number): TuiMouseEvent {
+/** Build a normalized mouse event for the form. */
+function mouseEvent(type: "press" | "move" | "wheel", x: number, y: number): TuiMouseEvent {
   return {
     type,
     button: type === "press" ? "left" : "none",
@@ -1091,6 +1091,124 @@ nodeTest("a mouse interaction keeps the question open", async (t) => {
     }
   }
 });
+
+nodeTest(
+  "the wheel moves the choice cursor one option at a time and clamps at both ends",
+  async () => {
+    const harness = fakeHarness();
+    const controller = new AbortController();
+    const execution = askTool(harness).execute(
+      "wheel-options",
+      { question: "Choose?", options: ["First", "Second"] },
+      controller.signal,
+      undefined,
+      harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    const wheel = (wheelDelta: number) =>
+      component.handleMouse({ ...mouseEvent("wheel", 2, 2), wheelDelta });
+    try {
+      assert.deepEqual(wheel(5), { handled: true, render: true });
+      assert.match(component.render(80).join("\n"), /> 2\. Second/);
+      assert.deepEqual(wheel(5), { handled: true, render: true });
+      assert.match(component.render(80).join("\n"), /> 3\. Type a custom answer/);
+      assert.deepEqual(wheel(5), { handled: true, render: false });
+      assert.deepEqual(wheel(-5), { handled: true, render: true });
+      assert.deepEqual(wheel(-5), { handled: true, render: true });
+      assert.match(component.render(80).join("\n"), /> 1\. First/);
+      assert.deepEqual(wheel(-5), { handled: true, render: false });
+      wheel(5);
+      component.handleInput("\r");
+      assert.equal((await execution).details.answers[0]?.answer, "Second");
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  },
+);
+
+nodeTest(
+  "the wheel reads a long question and choice without moving the choice cursor",
+  async () => {
+    const harness = fakeHarness();
+    harness.terminal.rows = 15;
+    const question = `QUESTION-START ${"context ".repeat(120)} QUESTION-END`;
+    const choice = `CHOICE-START ${"details ".repeat(120)} CHOICE-END`;
+    const controller = new AbortController();
+    const execution = askTool(harness).execute(
+      "wheel-read",
+      { question, options: [choice, "Short choice"] },
+      controller.signal,
+      undefined,
+      harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    const wheel = (wheelDelta: number) =>
+      component.handleMouse({ ...mouseEvent("wheel", 2, 2), wheelDelta });
+    const render = () => component.render(80).join("\n");
+    try {
+      assert.match(render(), /QUESTION-START/);
+      assert.doesNotMatch(render(), /QUESTION-END|CHOICE-END/);
+      assert.deepEqual(wheel(1), { handled: true, render: true });
+      assert.match(render(), /Q 2-/);
+      wheel(100);
+      assert.match(render(), /QUESTION-END/);
+      assert.doesNotMatch(render(), /CHOICE-END/);
+      wheel(100);
+      assert.match(render(), /CHOICE-END/);
+      wheel(-100);
+      assert.match(render(), /> 1\. CHOICE-START/);
+      wheel(-100);
+      assert.match(render(), /QUESTION-START/);
+      component.handleInput("\r");
+      assert.equal((await execution).details.answers[0]?.answer, choice);
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  },
+);
+
+nodeTest(
+  "the wheel scrolls the answer review in both directions and consumes both ends",
+  async () => {
+    const harness = fakeHarness();
+    harness.terminal.rows = 15;
+    const answer = `REVIEW-START ${"word ".repeat(300)} REVIEW-END`;
+    const controller = new AbortController();
+    const execution = askTool(harness).execute(
+      "wheel-review",
+      { questions: [{ question: "Details?" }, { question: "Ready?", options: ["Yes"] }] },
+      controller.signal,
+      undefined,
+      harness.ctx,
+    );
+    const component = harness.getCustomComponent();
+    const wheel = (wheelDelta: number) =>
+      component.handleMouse({ ...mouseEvent("wheel", 2, 2), wheelDelta });
+    const render = () => component.render(80).join("\n");
+    try {
+      component.handleInput("\r");
+      component.handleInput(answer);
+      component.handleInput("\r");
+      component.handleInput("\r");
+      assert.match(render(), /Review answers/);
+      assert.match(render(), /REVIEW-END/);
+      assert.deepEqual(wheel(100), { handled: true, render: false });
+      assert.deepEqual(wheel(-100), { handled: true, render: true });
+      assert.match(render(), /REVIEW-START/);
+      assert.doesNotMatch(render(), /REVIEW-END/);
+      assert.deepEqual(wheel(-100), { handled: true, render: false });
+      assert.deepEqual(wheel(100), { handled: true, render: true });
+      assert.match(render(), /REVIEW-END/);
+      component.handleInput("\r");
+      assert.equal((await execution).details.answers[0]?.answer, answer);
+    } finally {
+      controller.abort();
+      await execution;
+    }
+  },
+);
 
 nodeTest("RPC choices keep later dialogs open past the original timeout", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout"] });
