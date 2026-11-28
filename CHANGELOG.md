@@ -2,8 +2,27 @@
 
 ## Unreleased
 
+## 0.6.22 - 2026-11-28
+
+<!-- npm-release:unreleased:start -->
+
 - Use the mouse wheel in fullscreen to move through choices and scroll long questions, choice labels, and answer reviews.
 - Require Pi 1.7.0 or later (PEA-240).
+
+<!-- npm-release:unreleased:end -->
+
+- ci: pin shared automation to 788061a and wire RELEASE_APP_PRIVATE_KEY (#94) ([f17a1cc](https://github.com/fitchmultz/pi-ask-question/commit/f17a1cca7feee21f7e5a3ff7a2833c31ab16ed66))
+
+### What's Changed
+
+- ci: pin shared automation to 788061a and wire RELEASE_APP_PRIVATE_KEY by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/94
+- docs(agents): remove stale live-runtime activation hold from AGENTS.md by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/95
+- chore: enforce 2-day npm min-release-age cooldown by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/96
+- chore: raise Pi floor to 1.6.1 (PEA-238) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/97
+- chore: raise Pi floor to 1.7.0 (PEA-240) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/98
+- Add mouse wheel scrolling to the question overlay (PAQ-202) by @fitchmultz in https://github.com/fitchmultz/pi-ask-question/pull/99
+
+**Full Changelog**: https://github.com/fitchmultz/pi-ask-question/compare/v0.6.21...v0.6.22
 
 ## 0.6.21 - 2026-11-21
 
