@@ -376,6 +376,19 @@ nodeTest(
               viewport().some((line) => line.includes("Final detail needed for the decision.")),
             );
             if (tuiMode === "fullscreen") {
+              const contextHintRow =
+                viewport().findIndex((line) => line.includes("return to question")) + 1;
+              assert.ok(contextHintRow > 0);
+              const beforeHintWheel = viewport();
+              terminal.send(`\x1b[<72;1;${contextHintRow}M`);
+              await nextRender();
+              assert.notDeepEqual(
+                viewport(),
+                beforeHintWheel,
+                "Wheel over the context-view hint row scrolls the conversation",
+              );
+              terminal.send(`\x1b[<73;1;${contextHintRow}M`);
+              await nextRender();
               terminal.send("\x1b[5~");
               await nextRender();
               assert.ok(

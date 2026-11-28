@@ -491,12 +491,7 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
     const timeoutChanged = this.markInteraction();
     if (event.type === "wheel" && event.wheelDelta !== undefined && event.wheelDelta !== 0) {
-      const changed =
-        (!this.context.reading && this.scrollWheel(event.wheelDelta)) || timeoutChanged;
-      if (changed) {
-        this.invalidate();
-      }
-      return { handled: true, render: changed };
+      return this.context.reading ? undefined : this.handleWheel(event.wheelDelta, timeoutChanged);
     }
     if (event.type === "click" && event.button === "left" && this.context.contains(event)) {
       this.toggleContext();
@@ -505,14 +500,18 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     return;
   }
 
-  private scrollWheel(lines: number): boolean {
-    if (this.tab === this.submitTab) {
-      return this.scrolls.scrollReview(lines);
+  private handleWheel(lines: number, timeoutChanged: boolean): TuiMouseEventResult {
+    let scrolled = this.tab === this.submitTab && this.scrolls.scrollReview(lines);
+    if (this.tab !== this.submitTab) {
+      scrolled = this.editing
+        ? this.scrolls.scrollQuestion(lines)
+        : this.scrolls.scrollChoice(lines) || this.moveOption(Math.sign(lines));
     }
-    if (this.editing) {
-      return this.scrolls.scrollQuestion(lines);
+    const changed = scrolled || timeoutChanged;
+    if (changed) {
+      this.invalidate();
     }
-    return this.scrolls.scrollChoice(lines) || this.moveOption(Math.sign(lines));
+    return { handled: true, render: changed };
   }
 
   private measureLayout(width: number, height: number): string[] {
