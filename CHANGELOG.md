@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Use the mouse wheel in fullscreen to move through choices and scroll long questions, choice labels, and answer reviews.
 - Require Pi 1.7.0 or later (PEA-240).
 
 ## 0.6.21 - 2026-11-21

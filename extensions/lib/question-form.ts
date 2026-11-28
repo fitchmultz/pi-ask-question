@@ -222,12 +222,13 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     this.tui.requestRender();
   }
 
-  private markInteraction(): void {
+  private markInteraction(): boolean {
     if (!this.deps.timeout.stop()) {
-      return;
+      return false;
     }
     this.refresh();
     this.channel.publishState();
+    return true;
   }
 
   private toggleContext(): void {
@@ -364,13 +365,9 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
   }
 
   private handleEditingInput(data: string): void {
-    if (this.scrolls.maxQuestionScroll > 0 && matchesKey(data, Key.shift("pageUp"))) {
-      this.scrolls.pageQuestionUp();
-      this.refresh();
-      return;
-    }
-    if (this.scrolls.maxQuestionScroll > 0 && matchesKey(data, Key.shift("pageDown"))) {
-      this.scrolls.pageQuestionDown();
+    const page = this.pageDirection(data, true);
+    if (this.scrolls.maxQuestionScroll > 0 && page !== 0) {
+      this.scrolls.scrollQuestion(page, "page");
       this.refresh();
       return;
     }
@@ -387,13 +384,9 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
 
   private handleSubmitTabInput(data: string): void {
     // Fullscreen reserves plain Page keys for transcript scrolling.
-    if (this.scrolls.maxReviewScroll > 0 && this.isPageUp(data)) {
-      this.scrolls.pageReviewUp();
-      this.refresh();
-      return;
-    }
-    if (this.scrolls.maxReviewScroll > 0 && this.isPageDown(data)) {
-      this.scrolls.pageReviewDown();
+    const page = this.pageDirection(data);
+    if (this.scrolls.maxReviewScroll > 0 && page !== 0) {
+      this.scrolls.scrollReview(page, "page");
       this.refresh();
       return;
     }
@@ -403,10 +396,17 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
   }
 
   private handleOptionInput(data: string): void {
-    if (this.scrollQuestionOrChoices(data)) {
+    const page = this.pageDirection(data);
+    if (page !== 0 && (this.scrolls.maxQuestionScroll > 0 || this.scrolls.maxLabelScroll > 0)) {
+      this.scrolls.scrollChoice(page, "page");
+      this.refresh();
       return;
     }
-    if (this.moveOptionCursor(data)) {
+    const up = this.keys.matches(data, "tui.select.up");
+    if (up || this.keys.matches(data, "tui.select.down")) {
+      this.scrolls.labelScroll = 0;
+      this.moveOption(up ? -1 : 1);
+      this.refresh();
       return;
     }
     const question = this.current();
@@ -416,14 +416,20 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     this.selectOption(data, question);
   }
 
-  private isPageUp(data: string): boolean {
-    return this.keys.matches(data, "tui.select.pageUp") || matchesKey(data, Key.shift("pageUp"));
-  }
-
-  private isPageDown(data: string): boolean {
-    return (
-      this.keys.matches(data, "tui.select.pageDown") || matchesKey(data, Key.shift("pageDown"))
-    );
+  private pageDirection(data: string, shiftOnly = false): number {
+    if (
+      matchesKey(data, Key.shift("pageUp")) ||
+      (!shiftOnly && this.keys.matches(data, "tui.select.pageUp"))
+    ) {
+      return -1;
+    }
+    if (
+      matchesKey(data, Key.shift("pageDown")) ||
+      (!shiftOnly && this.keys.matches(data, "tui.select.pageDown"))
+    ) {
+      return 1;
+    }
+    return 0;
   }
 
   private navigateTabs(data: string): boolean {
@@ -441,38 +447,14 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
     return false;
   }
 
-  private scrollQuestionOrChoices(data: string): boolean {
-    const canScroll = this.scrolls.maxQuestionScroll > 0 || this.scrolls.maxLabelScroll > 0;
-    if (!canScroll) {
+  private moveOption(delta: number): boolean {
+    const next = Math.max(0, Math.min(this.choices().length - 1, this.option + delta));
+    if (next === this.option) {
       return false;
     }
-    if (this.isPageUp(data)) {
-      this.scrolls.pageChoiceUp();
-      this.refresh();
-      return true;
-    }
-    if (this.isPageDown(data)) {
-      this.scrolls.pageChoiceDown();
-      this.refresh();
-      return true;
-    }
-    return false;
-  }
-
-  private moveOptionCursor(data: string): boolean {
-    if (this.keys.matches(data, "tui.select.up")) {
-      this.option = Math.max(0, this.option - 1);
-      this.scrolls.labelScroll = 0;
-      this.refresh();
-      return true;
-    }
-    if (this.keys.matches(data, "tui.select.down")) {
-      this.option = Math.min(this.choices().length - 1, this.option + 1);
-      this.scrolls.labelScroll = 0;
-      this.refresh();
-      return true;
-    }
-    return false;
+    this.option = next;
+    this.scrolls.labelScroll = 0;
+    return true;
   }
 
   private selectOption(data: string, question: NormalizedQuestion): void {
@@ -507,12 +489,30 @@ export class QuestionForm implements Component, Focusable, FormView, ChannelHost
   }
 
   handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-    this.markInteraction();
+    const timeoutChanged = this.markInteraction();
+    if (event.type === "wheel" && event.wheelDelta !== undefined && event.wheelDelta !== 0) {
+      const changed =
+        (!this.context.reading && this.scrollWheel(event.wheelDelta)) || timeoutChanged;
+      if (changed) {
+        this.invalidate();
+      }
+      return { handled: true, render: changed };
+    }
     if (event.type === "click" && event.button === "left" && this.context.contains(event)) {
       this.toggleContext();
       return { handled: true };
     }
     return;
+  }
+
+  private scrollWheel(lines: number): boolean {
+    if (this.tab === this.submitTab) {
+      return this.scrolls.scrollReview(lines);
+    }
+    if (this.editing) {
+      return this.scrolls.scrollQuestion(lines);
+    }
+    return this.scrolls.scrollChoice(lines) || this.moveOption(Math.sign(lines));
   }
 
   private measureLayout(width: number, height: number): string[] {

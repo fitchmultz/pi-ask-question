@@ -10,6 +10,16 @@ type QuestionWindow = {
   rows: number;
 };
 
+type ScrollUnit = "line" | "page";
+
+function scrollLines(delta: number, unit: ScrollUnit, pageRows: number): number {
+  return unit === "page" ? delta * Math.max(1, pageRows - 1) : delta;
+}
+
+function scrollOffset(offset: number, max: number, lines: number): number {
+  return Math.max(0, Math.min(max, offset + lines));
+}
+
 /** Scroll positions and window sizes for question, choice, and review sections. */
 export class FormScrolls {
   optionScroll = 0;
@@ -29,48 +39,38 @@ export class FormScrolls {
     this.questionScroll = 0;
   }
 
-  pageQuestionUp(): void {
-    this.questionScroll = Math.max(0, this.questionScroll - Math.max(1, this.questionPageRows - 1));
-  }
-
-  pageQuestionDown(): void {
-    this.questionScroll = Math.min(
+  scrollQuestion(delta: number, unit: ScrollUnit = "line"): boolean {
+    const previous = this.questionScroll;
+    this.questionScroll = scrollOffset(
+      previous,
       this.maxQuestionScroll,
-      this.questionScroll + Math.max(1, this.questionPageRows - 1),
+      scrollLines(delta, unit, this.questionPageRows),
     );
+    return this.questionScroll !== previous;
   }
 
-  pageChoiceUp(): void {
-    if (this.labelScroll > 0) {
-      this.labelScroll = Math.max(0, this.labelScroll - Math.max(1, this.pageRows - 1));
-    } else {
-      this.pageQuestionUp();
+  scrollChoice(delta: number, unit: ScrollUnit = "line"): boolean {
+    // Scroll through the question first, then the selected label; reverse going up.
+    if (delta < 0 ? this.labelScroll === 0 : this.questionScroll < this.maxQuestionScroll) {
+      return this.scrollQuestion(delta, unit);
     }
-  }
-
-  pageChoiceDown(): void {
-    if (this.questionScroll < this.maxQuestionScroll) {
-      this.pageQuestionDown();
-    } else {
-      this.labelScroll = Math.min(
-        this.maxLabelScroll,
-        this.labelScroll + Math.max(1, this.pageRows - 1),
-      );
-    }
-  }
-
-  pageReviewUp(): void {
-    this.reviewScroll = Math.max(
-      0,
-      (this.reviewScroll ?? this.maxReviewScroll) - Math.max(1, this.reviewPageRows - 1),
+    const previous = this.labelScroll;
+    this.labelScroll = scrollOffset(
+      previous,
+      this.maxLabelScroll,
+      scrollLines(delta, unit, this.pageRows),
     );
+    return this.labelScroll !== previous;
   }
 
-  pageReviewDown(): void {
-    this.reviewScroll = Math.min(
+  scrollReview(delta: number, unit: ScrollUnit = "line"): boolean {
+    const previous = this.reviewScroll ?? this.maxReviewScroll;
+    this.reviewScroll = scrollOffset(
+      previous,
       this.maxReviewScroll,
-      (this.reviewScroll ?? this.maxReviewScroll) + Math.max(1, this.reviewPageRows - 1),
+      scrollLines(delta, unit, this.reviewPageRows),
     );
+    return this.reviewScroll !== previous;
   }
 
   /** Window the question and choice sections to the terminal height. */

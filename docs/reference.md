@@ -102,6 +102,7 @@ The configured selection-cancel binding cancels the question and reports cancell
 - TUI questions reserve space above the dialog for preceding conversation text. The dialog covers the footer and widgets while preserving the editor draft. Long lists scroll by complete wrapped choices with Up/Down.
 - Ctrl+O switches between the question and a conversation view without losing your selection or custom answer draft. In fullscreen, PageUp/PageDown scroll the conversation. In regular mode, use your terminal's scrollback. Opening the conversation view disables the question's timeout.
 - PageUp/PageDown let you read a question, choice, or answer review longer than the screen. Shift+PageUp/Shift+PageDown also work in fullscreen.
+- In fullscreen, wheel over the question dialog to read long text and move through choices. Wheel outside the dialog to scroll the conversation.
 - While typing a custom answer, the list shows only that choice; Escape returns to the list. Shift+PageUp/Shift+PageDown can scroll a long question while editing.
 - Saved answers have a one-line preview while choosing; the review retains their full text.
 - Blank RPC custom answers return to option selection, matching TUI behavior; dismissing the input cancels.
